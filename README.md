@@ -21,6 +21,7 @@ prompts for your password and offers to create `~/.pgpass`. Optionally set
 | Phase | Command | Output |
 |---|---|---|
 | 1. Data pulls (WRDS) | `python -m src.pull_wrds` | `data/raw/*.parquet` (not in git) |
+| 1. ...or import web-query downloads | `python -m src.import_wrds_files ~/Downloads/<file> ...` | same files as above |
 | 1. Data pulls (public) | `python -m src.pull_public` | `data/raw/kf_*.parquet`, `fred_macro.parquet` |
 | 2–9 | not yet implemented | |
 
