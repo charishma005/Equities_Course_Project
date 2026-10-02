@@ -1,0 +1,14 @@
+# Licensed WRDS data and stock-level intermediates: never commit (CLAUDE.md 1.2)
+data/raw/
+data/interim/
+
+# Secrets
+.env
+.pgpass
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+.venv/
