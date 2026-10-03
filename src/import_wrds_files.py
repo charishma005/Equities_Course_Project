@@ -14,6 +14,8 @@ Usage:
     python -m src.import_wrds_files ~/Downloads/ibes.csv [more files ...]
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
@@ -85,6 +87,27 @@ def parse_dates(s: pd.Series) -> pd.Series:
     return pd.to_datetime(as_str, errors="coerce")
 
 
+def apply_ibes_filters(df: pd.DataFrame) -> pd.DataFrame:
+    """Apply the CLAUDE.md 3.1 filters for any filter column the download kept.
+
+    Input: lowercased I/B/E/S frame. Web-query downloads often include
+    measure and fpi (sometimes fiscalp, usfirm); columns that are absent
+    cannot be checked and are reported. Output: filtered frame.
+    """
+    wanted = {"measure": "EPS", "fpi": "1", "fiscalp": "ANN", "usfirm": "1"}
+    for col, value in wanted.items():
+        if col not in df:
+            print(f"  NOTE: no '{col}' column; make sure {col}={value} was set in the WRDS form.")
+            continue
+        vals = df[col].astype("string").str.strip().str.replace(r"\.0$", "", regex=True)
+        keep = vals.str.upper() == value
+        counts = vals.value_counts(dropna=False).head(5).to_dict()
+        print(f"  {col}: values {counts}; keeping {col}={value} "
+              f"({keep.sum():,} of {len(df):,} rows)")
+        df = df[keep.fillna(False)]
+    return df
+
+
 def normalize(df: pd.DataFrame) -> tuple[str, pd.DataFrame]:
     """Lowercase columns, identify dataset, keep required columns, fix types.
 
@@ -93,6 +116,8 @@ def normalize(df: pd.DataFrame) -> tuple[str, pd.DataFrame]:
     """
     df = df.rename(columns=lambda c: str(c).strip().lower())
     name = identify(df.columns)
+    if name == "ibes_statsum":
+        df = apply_ibes_filters(df)
     df = df[REQUIRED[name]].copy()
     for col in DATE_COLS[name]:
         parsed = parse_dates(df[col])
@@ -131,7 +156,11 @@ def main(paths: list[Path], force: bool = False) -> None:
     unless force=True)."""
     for path in paths:
         print(f"{path}")
-        name, df = normalize(read_any(path))
+        try:
+            name, df = normalize(read_any(path))
+        except ValueError as err:
+            print(f"  SKIPPED: {err}")
+            continue
         out = config.DATA_RAW / f"{name}.parquet"
         if out.exists() and not force:
             print(f"  skip: {out} exists (use --force to overwrite)")

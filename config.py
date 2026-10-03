@@ -5,6 +5,8 @@ Timing convention: all monthly data are indexed by month-end timestamps
 uses information available on or before t and predicts the return of t+1.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
 # --------------------------------------------------------------------------

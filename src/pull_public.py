@@ -19,6 +19,8 @@ Usage:
     python -m src.pull_public [--force] [--no-fred]
 """
 
+from __future__ import annotations
+
 import argparse
 import io
 import re

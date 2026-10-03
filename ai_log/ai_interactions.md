@@ -33,5 +33,16 @@ to NaN. Offline unit tests cover the parsers, the month-end date convention,
 and the gitignore rules. The pulls could not be run because the cloud sandbox
 has no network access to WRDS, Ken French, or FRED.
 
+**Bug found later (2026-10-03):** the AI wrote type hints such as
+`pd.Series | pd.DatetimeIndex`, which need Python 3.10+. The plan says
+Python 3.11+, but a teammate's Mac runs Python 3.9, so every script
+crashed on import with `TypeError: unsupported operand type(s) for |`.
+The AI had only tested on Python 3.11 in its own sandbox. Fixed by adding
+`from __future__ import annotations` to every module and re-running the
+tests under Python 3.9 with the teammate's pandas version (2.2.3). The
+same session also changed the importer to skip files it does not
+recognize instead of crashing, and to apply the MEASURE/FPI filters when
+those columns are present in a web-query download.
+
 **Critical evaluation (to be written by the team):**
 

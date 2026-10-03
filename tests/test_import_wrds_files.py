@@ -1,5 +1,7 @@
 """Offline tests for importing WRDS web-query downloads."""
 
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -23,6 +25,29 @@ def test_ibes_uppercase_web_query_columns():
     assert df["statpers"].iloc[0] == pd.Timestamp("1990-01-18")
     assert df["fpedats"].iloc[0] == pd.Timestamp("1990-09-30")
     assert df["ticker"].iloc[0] == "AAPL"
+
+
+def test_ibes_measure_and_fpi_filters_applied_when_present():
+    # Same column layout as the team's actual WRDS web-query download
+    raw = pd.DataFrame({
+        "TICKER": ["A", "A", "B"], "CUSIP": ["1", "1", "2"], "OFTIC": ["A", "A", "B"],
+        "STATPERS": ["1990-01-18"] * 3, "MEASURE": ["EPS", "EPS", "EPS"],
+        "FPI": [1, 2, 1], "NUMEST": [3, 3, 4], "NUMUP": [1, 1, 0], "NUMDOWN": [0, 0, 1],
+        "MEDEST": [1.0, 1.1, 2.0], "MEANEST": [1.0, 1.1, 2.0], "STDEV": [0.1, 0.1, 0.2],
+        "FPEDATS": ["1990-12-31", "1991-12-31", "1990-12-31"],
+    })
+    name, df = normalize(raw)
+    assert name == "ibes_statsum"
+    assert df["ticker"].tolist() == ["A", "B"]  # FPI=2 row dropped
+
+
+def test_unrecognized_file_is_skipped_not_fatal(tmp_path, capsys):
+    from src.import_wrds_files import main
+    p = tmp_path / "ids.csv"
+    pd.DataFrame({"TICKER": ["A"], "OFTIC": ["A"], "STATPERS": ["1990-01-18"],
+                  "MEASURE": ["EPS"], "FPI": [1]}).to_csv(p, index=False)
+    main([p])
+    assert "SKIPPED" in capsys.readouterr().out
 
 
 def test_crsp_ret_letter_codes_become_nan():

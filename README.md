@@ -7,6 +7,8 @@ are in [`CLAUDE.md`](CLAUDE.md).
 
 ## Setup
 
+Python 3.9 or newer (tested on 3.9 and 3.11).
+
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt

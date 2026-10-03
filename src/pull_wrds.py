@@ -16,6 +16,8 @@ Usage:
     python -m src.pull_wrds --force    # re-pull everything
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import sys
