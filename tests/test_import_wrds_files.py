@@ -50,6 +50,28 @@ def test_unrecognized_file_is_skipped_not_fatal(tmp_path, capsys):
     assert "SKIPPED" in capsys.readouterr().out
 
 
+def test_combined_crsp_web_download_split_into_three_tables(tmp_path, monkeypatch):
+    import config
+    from src.import_wrds_files import main
+    monkeypatch.setattr(config, "DATA_RAW", tmp_path / "raw")
+    p = tmp_path / "crsp.csv"
+    pd.DataFrame({
+        "PERMNO": [10001, 10001, 10002], "date": ["1990-01-31", "1990-02-28", "1990-01-31"],
+        "SHRCD": [11, 11, 10], "EXCHCD": [1, 1, 3], "SICCD": [4920, 4920, "Z"],
+        "PRC": [-10.0, 10.5, 20.0], "RET": ["0.01", "C", "0.02"], "SHROUT": [100, 100, 50],
+        "DLRET": [None, -0.3, None],
+    }).to_csv(p, index=False)
+    main([p])
+    msf = pd.read_parquet(tmp_path / "raw" / "crsp_msf.parquet")
+    names = pd.read_parquet(tmp_path / "raw" / "crsp_msenames.parquet")
+    dl = pd.read_parquet(tmp_path / "raw" / "crsp_msedelist.parquet")
+    assert len(msf) == 3 and msf["ret"].isna().sum() == 1
+    assert names.loc[0, "namedt"] == pd.Timestamp("1990-01-01")
+    assert names.loc[0, "nameendt"] == pd.Timestamp("1990-01-31")
+    assert dl[["permno", "dlret"]].values.tolist() == [[10001, -0.3]]
+    assert dl["dlstdt"].iloc[0] == pd.Timestamp("1990-02-28")
+
+
 def test_crsp_ret_letter_codes_become_nan():
     raw = pd.DataFrame({"PERMNO": [1, 1], "date": ["19900131", "19900228"],
                         "RET": ["0.05", "C"], "PRC": [-10.0, 11.0], "SHROUT": [100, 100]})

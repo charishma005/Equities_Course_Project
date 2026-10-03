@@ -41,6 +41,7 @@ REQUIRED = {
 NUMERIC_COERCE = {
     "crsp_msf": ["ret", "prc", "shrout"],
     "crsp_msedelist": ["dlret"],
+    "crsp_msenames": ["siccd", "shrcd", "exchcd"],
     "ibes_statsum": ["numest", "numup", "numdown", "meanest", "medest", "stdev"],
 }
 
@@ -151,23 +152,55 @@ def report(name: str, df: pd.DataFrame) -> None:
               "clean.py will drop them.")
 
 
+def split_combined_crsp(df: pd.DataFrame) -> list[pd.DataFrame]:
+    """Split a WRDS-website monthly stock file download that also carries
+    event variables (SHRCD, EXCHCD, SICCD, optionally DLRET/DLSTDT) into
+    msf, msenames, and msedelist frames.
+
+    Input: frame with lowercased columns. Output: list of raw frames for
+    normalize(); the original is returned unchanged if it is not a combined
+    file. Each row's codes are the values in effect that month, so the names
+    record is valid from the first to the last day of that month.
+    """
+    if not ({"siccd", "shrcd", "exchcd"} <= set(df.columns)
+            and set(REQUIRED["crsp_msf"]) <= set(df.columns)):
+        return [df]
+    print("  combined CRSP monthly file: splitting into msf / msenames / msedelist")
+    dates = parse_dates(df["date"])
+    parts = [df[REQUIRED["crsp_msf"]]]
+    names = df[["permno", "siccd", "shrcd", "exchcd"]].copy()
+    names["namedt"] = dates.dt.to_period("M").dt.start_time
+    names["nameendt"] = dates.dt.to_period("M").dt.end_time.dt.normalize()
+    parts.append(names.dropna(subset=["namedt"]))
+    if "dlret" in df:
+        dl = df[["permno", "dlret"]].copy()
+        dl["dlstdt"] = parse_dates(df["dlstdt"]) if "dlstdt" in df else dates
+        dl = dl[pd.to_numeric(dl["dlret"], errors="coerce").notna()]
+        parts.append(dl)
+    else:
+        print("  NOTE: no DLRET column; add it to the download for delisting returns.")
+    return parts
+
+
 def main(paths: list[Path], force: bool = False) -> None:
     """Import each file to data/raw/<dataset>.parquet (refuses to overwrite
-    unless force=True)."""
+    unless force=True). A combined CRSP monthly download produces three files."""
     for path in paths:
         print(f"{path}")
-        try:
-            name, df = normalize(read_any(path))
-        except ValueError as err:
-            print(f"  SKIPPED: {err}")
-            continue
-        out = config.DATA_RAW / f"{name}.parquet"
-        if out.exists() and not force:
-            print(f"  skip: {out} exists (use --force to overwrite)")
-            continue
-        print(f"  identified as: {name}")
-        report(name, df)
-        save_parquet(df, out)
+        raw = read_any(path).rename(columns=lambda c: str(c).strip().lower())
+        for part in split_combined_crsp(raw):
+            try:
+                name, df = normalize(part)
+            except ValueError as err:
+                print(f"  SKIPPED: {err}")
+                continue
+            out = config.DATA_RAW / f"{name}.parquet"
+            if out.exists() and not force:
+                print(f"  skip: {out} exists (use --force to overwrite)")
+                continue
+            print(f"  identified as: {name}")
+            report(name, df)
+            save_parquet(df, out)
 
 
 if __name__ == "__main__":
