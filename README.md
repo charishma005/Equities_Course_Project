@@ -32,6 +32,7 @@ prompts for your password and offers to create `~/.pgpass`. Optionally set
 | 6. Backtest and costs | `python -m src.backtest` | `strategy_returns_by_month.csv`, `performance_by_window.csv`, cumulative-return and drawdown figures |
 | 7. Factor attribution | `python -m src.attribution` | `factor_regressions.csv`, `alpha_with_without_umd.csv` (needs `kf_ff5`, `kf_umd`, `kf_strev` in `data/raw`) |
 | 8. Robustness | `python -m src.robustness` (then `--alphas-only` where `data/raw` exists) | `robustness_grid.csv`, heatmap, annual returns, 2009/2020 table, rolling alpha |
+| 9. Report assets | `python -m src.report` | `results/summary.md` (all key tables, figure list, draft executive summary, report checklist) |
 
 Tests: `python -m pytest -q tests`
 
@@ -339,3 +340,18 @@ formation Jan 1995–Dec 2025 (20 bp unless the row changes costs):
   2010–11, 2023–24) alternate with negative ones (2005–07, 2019); there is
   no persistent alpha regime.
 - The optional macro extension (CLAUDE.md 10.4) has not been run.
+
+### Phase 9: report assets (2026-10-04)
+
+- `python -m src.report` builds `results/summary.md` from the committed
+  result tables only (no WRDS data needed): IC table, risk and λ,
+  performance, FF5+UMD regressions, alpha with/without UMD and the
+  criterion flag, FF5+UMD+ST reversal, horizon splits, robustness grid,
+  captioned figure list, a draft executive summary, and a checklist mapping
+  each report section to its tables and figures.
+- The executive summary is a **draft for the team to edit**; every number
+  in it is read from the tables, so rerun `src.report` after any rerun.
+- Before final: rerun the min-analysts and 30-industry robustness rows on
+  the machine whose data built the committed signals, write the critical
+  evaluations in the AI log, and decide on repository visibility (public
+  repo with derived WRDS outputs and AAPL example values in the docs).

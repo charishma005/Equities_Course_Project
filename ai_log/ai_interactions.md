@@ -249,3 +249,32 @@ are unaffected.
 
 **Critical evaluation (to be written by the team):**
 
+
+---
+
+## Entry 7: Phase 9 report assets
+
+- **Date:** 2026-10-04
+- **Phase:** 9 (report assets)
+- **Tool:** Claude Code
+
+**Prompt (verbatim):**
+
+> ok
+
+(in reply to: "Want me to build [Phase 9]?")
+
+**Summary of what was produced:**
+
+Claude Code wrote `src/report.py`, which builds `results/summary.md` from the
+committed result tables: the IC, risk/λ, performance, factor-regression,
+horizon, and robustness tables, a captioned list of every figure, a
+checklist mapping each report section to its evidence, and a draft
+executive summary whose numbers are read from the tables. Its first draft
+of the summary said no strategy or window reached t ≥ 2, which was false:
+the blend's 10-month recent window has t = 3.40. The AI caught this on
+review and rewrote the sentence to state the low-power exception
+explicitly.
+
+**Critical evaluation (to be written by the team):**
+
