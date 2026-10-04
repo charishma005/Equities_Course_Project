@@ -28,7 +28,8 @@ prompts for your password and offers to create `~/.pgpass`. Optionally set
 | 2. Clean and link | `python -m src.clean` | `data/interim/*.parquet`, coverage tables |
 | 3. Build signals | `python -m src.signals` | `data/processed/signals.parquet`, coverage tables, MOM–REV correlation figure |
 | 4. IC and blend | `python -m src.ic` | IC/horizon tables, orthogonal REV, expanding blend, figures |
-| 5–8. Risk, portfolio, attribution, robustness | not yet implemented | |
+| 5. Risk model and holdings | `python -m src.portfolio` | `data/processed/holdings.parquet`, `portfolio_by_month.csv`, `portfolio_risk_summary.csv`, λ figure |
+| 6–8. Backtest, attribution, robustness | not yet implemented | |
 
 Tests: `python -m pytest -q tests`
 
@@ -156,3 +157,43 @@ so MOM and REV are compared over the same months.
 - The full-window MOM IC (t = 8.5) starts in 1927; compare MOM with REV only
   over `rev_sample`.
 - Recent 18 months: 10 evaluable REV months; descriptive only.
+
+### Phase 5: risk model and holdings (run 2026-10-04)
+
+- `src/risk.py`: EWMA covariance of the 49 Ken French industry returns,
+  30-month half-life, 60-month minimum, estimated each month from returns
+  through that month; residual-to-average industry volatility for omega.
+  Returns are rebuilt from `next_return` in the committed signal panel. RF is
+  not subtracted: it is common to all industries, so it drops out of risk for
+  dollar-neutral books.
+- `src/portfolio.py`: Grinold-Kahn alphas, mean-variance holdings with
+  dollar neutrality and |h_n| <= 10% of gross (solved as a fixed point), the
+  HW02 diagonal comparison, and λ set each month so ex-ante active risk is 5%.
+- Choices not fixed by the plan: industries with a missing signal get no
+  position that month; the alpha IC is the strategy's own expanding mean IC
+  over earlier signal months (60-month minimum, so only its sign matters
+  after λ calibration); the diagonal book is demeaned to be dollar neutral
+  and has no cap. Beta-neutral holdings are left for the Phase 8 grid.
+- Holdings start: MOM June 1974 (first full covariance), REV and REV
+  orthogonal January 1990, blend January 1995.
+
+| Strategy | Method | Ex-ante risk | Realized active vol | Median λ | Mean gross |
+|---|---|---:|---:|---:|---:|
+| MOM | MV | 5.0% | 10.2% | 5.4 | 3.9x |
+| REV | MV | 5.0% | 9.2% | 2.1 | 4.5x |
+| REV orthogonal | MV | 5.0% | 9.3% | 0.63 | 4.5x |
+| Blend | MV | 5.0% | 9.2% | 3.3 | 3.3x |
+| MOM | Diagonal | 5.0% | 6.0% | 9.4 | 1.1x |
+| Blend | Diagonal | 5.0% | 6.3% | 5.7 | 1.1x |
+
+- **Flag (team decision needed):** ex-ante risk hits 5% every month, but
+  realized active volatility of the full mean-variance books is about twice
+  the target, with about 4x gross exposure. The optimizer is levering
+  directions the 49x49 EWMA covariance underestimates (a 30-month half-life
+  is about 86 months of effective data). A side test (not in the code,
+  1995–2025, MV): MOM realized vol 9.8% (plan), 8.6% (60-month half-life),
+  6.7% (50% shrinkage toward the diagonal, 1.25x gross); REV orthogonal 9.3%,
+  7.3%, 4.3%. Options: keep the plan's model and report the gap, add
+  covariance shrinkage, or use the diagonal book as primary.
+- REV orthogonal's λ falls toward 0.01 after 2023 because its expanding IC
+  is near zero: the optimizer scales up an almost-zero alpha to reach 5% risk.

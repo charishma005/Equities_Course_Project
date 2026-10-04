@@ -104,3 +104,41 @@ invariance test, and plan-compliant figure styling.
 
 **Critical evaluation (to be written by the team):**
 
+
+---
+
+## Entry 3: Phase 4 checkpoint and Phase 5 risk model / portfolio construction
+
+- **Date:** 2026-10-04
+- **Phase:** 4–5 (IC checkpoint, risk model, holdings)
+- **Tool:** Claude Code
+
+**Prompts (verbatim):**
+
+> what's next steps after u review the git hub
+
+> yes do steps 1-2 then start phase 5  and Still open: the repo is public and
+> contains derived WRDS outputs and real AAPL values. Make it private unless
+> your course says otherwise. - ignore for now we will see in the end
+
+**Summary of what was produced:**
+
+Claude Code reviewed the team's Phase 4 code (no look-ahead found) and
+flagged the CLAUDE.md 12.4 checkpoint: REV orthogonal to momentum has an IC
+of about zero (Newey-West t -0.05 over 1985–2025, -0.50 post-2010). It added
+a REV-sample comparison window, Newey-West t-stats, and figure titles with
+sample periods. For Phase 5 it wrote `src/risk.py` (EWMA covariance, 30-month
+half-life, residual volatility) and `src/portfolio.py` (Grinold-Kahn alphas,
+dollar-neutral mean-variance holdings with a 10%-of-gross cap solved as a
+fixed point, the diagonal comparison, and monthly λ calibration to 5%
+ex-ante risk), with tests for timing and constraints. It found that realized
+active volatility of the mean-variance books is about twice the 5% target
+and ran a side test showing covariance shrinkage closes most of the gap; it
+left the choice to the team rather than changing the plan's risk model.
+
+**Not logged by Claude Code:** the team also used another AI tool for the
+2026 coverage advice pasted into the Entry 2 conversation. That interaction
+should get its own entry, with the prompt the team sent it.
+
+**Critical evaluation (to be written by the team):**
+

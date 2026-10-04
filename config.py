@@ -85,6 +85,18 @@ COV_MIN_MONTHS = 60
 ANNUALIZE = 12
 TARGET_ACTIVE_RISK = 0.05          # annualized
 POSITION_CAP_FRAC_GROSS = 0.10
+# Expanding-mean IC used in Grinold-Kahn alphas needs this many past IC months
+# (same minimum as the blend). With lambda recalibrated to the risk target each
+# month, only the sign of this IC affects holdings.
+ALPHA_IC_MIN_MONTHS = 60
+RISK_TARGET_TOL = 1e-6             # relative tolerance on ex-ante active risk
+CAP_TOL = 1e-6                     # tolerance on |h_n| / gross <= cap
+STRATEGY_SIGNALS = {               # strategy -> z-score column (Phase 4 panel)
+    "mom": "mom_z",
+    "rev": "rev_z",
+    "rev_orth": "rev_orth_z",
+    "blend": "blend_z",
+}
 
 # --------------------------------------------------------------------------
 # Phase 6-8: backtest, attribution, robustness
