@@ -14,20 +14,6 @@ sys.path.insert(0, str(ROOT))
 from src.clean import industry_coverage, link_ibes, prepare_crsp  # noqa: E402
 
 
-def test_industry_coverage_flags_thin_industries():
-    panel = pd.DataFrame({
-        "month": [pd.Timestamp("2020-01-31")] * 7,
-        "industry": [1] * 6 + [2],
-        "permno": [1, 2, 3, 4, 5, 6, 7],
-        "numest": [3, 3, 3, 3, 3, 2, 5],      # permno 6 has too few analysts
-        "mktcap": [10.0] * 7,
-    })
-    cov = industry_coverage(panel).set_index("industry")
-    assert cov.loc[1, "linked_firms"] == 6 and cov.loc[1, "eligible_firms"] == 5
-    assert not cov.loc[1, "below_min_firms"]
-    assert cov.loc[2, "below_min_firms"]
-
-
 def test_prepare_crsp_uses_historical_name_and_combines_delisting_return():
     msf = pd.DataFrame({
         "permno": [1, 1], "date": ["1990-01-31", "1990-02-28"],
@@ -105,10 +91,7 @@ def test_link_rejects_crsp_characteristics_older_than_carry_limit():
     assert linked.empty
 
 
-def test_link_does_not_carry_within_crsp_coverage():
-    # CRSP runs to March 1990 (permno 2), but permno 1 has no February row,
-    # e.g. because it left the eligible universe. Its February snapshot must
-    # be dropped, not filled with January's market cap.
+def test_link_does_not_carry_missing_security_month_within_crsp_history():
     ibes = pd.DataFrame({
         "ticker": ["AAA"], "statpers": ["1990-02-15"], "numest": [5],
         "numup": [2], "numdown": [1], "meanest": [1.0], "fpedats": ["1990-12-31"],
@@ -118,8 +101,8 @@ def test_link_does_not_carry_within_crsp_coverage():
         "edate": [None], "score": [1],
     })
     stock = pd.DataFrame({
-        "permno": [1, 2], "date": ["1990-01-31", "1990-03-31"], "prc": [10, 5],
-        "mktcap": [1000, 500], "industry": [1, 2],
+        "permno": [1, 2], "date": ["1990-01-31", "1990-03-31"],
+        "prc": [10, 20], "mktcap": [1000, 2000], "industry": [1, 2],
     })
 
     linked, _ = link_ibes(ibes, links, stock, max_carry_months=12)
@@ -147,3 +130,28 @@ def test_link_blanks_carried_price_and_exposes_observation_age():
     assert linked.loc[0, "crsp_date"] == pd.Timestamp("1990-01-31")
     assert linked.loc[0, "price_age_months"] == 1
     assert linked.loc[0, "crsp_carried"]
+
+
+def test_industry_coverage_includes_zeroes_and_flags_fewer_than_minimum():
+    panel = pd.DataFrame({
+        "month": ["2020-01-31"] * 5,
+        "industry": [1] * 5,
+        "permno": [1, 2, 3, 4, 5],
+    })
+    months = pd.Series(["2020-01-31", "2020-02-29"])
+
+    coverage = industry_coverage(panel, months, min_firms=5)
+
+    assert len(coverage) == 2 * 49
+    january_industry_one = coverage.loc[
+        coverage["month"].eq(pd.Timestamp("2020-01-31"))
+        & coverage["industry"].eq(1)
+    ].iloc[0]
+    february_industry_one = coverage.loc[
+        coverage["month"].eq(pd.Timestamp("2020-02-29"))
+        & coverage["industry"].eq(1)
+    ].iloc[0]
+    assert january_industry_one["firms"] == 5
+    assert not january_industry_one["low_coverage"]
+    assert february_industry_one["firms"] == 0
+    assert february_industry_one["low_coverage"]

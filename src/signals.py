@@ -171,18 +171,21 @@ def build_signals(ibes: pd.DataFrame, industry_returns: pd.DataFrame,
 SIGNALS = ("mom", "rev", "rev_alt")
 
 
-def signal_coverage(panel: pd.DataFrame) -> pd.DataFrame:
-    """Count available and missing industries per month for each signal.
+def signal_coverage(signal: pd.DataFrame) -> pd.DataFrame:
+    """Report available and missing industries for each signal month.
 
-    Input: signal panel. Output: one row per month with `<signal>_industries`
-    (non-missing count) and `<signal>_missing` for mom, rev, rev_alt.
+    Output: one row per month with industries, <name>_available and
+    <name>_missing for mom, rev, rev_alt, and next_return.
     """
-    grouped = panel.groupby("month")
-    out = pd.DataFrame({"total_industries": grouped["industry"].size()})
-    for s in SIGNALS:
-        out[f"{s}_industries"] = grouped[s].count()
-        out[f"{s}_missing"] = out["total_industries"] - out[f"{s}_industries"]
-    return out.reset_index()
+    coverage = (signal.groupby("month", as_index=False)
+                .agg(industries=("industry", "nunique"),
+                     mom_available=("mom", "count"),
+                     rev_available=("rev", "count"),
+                     rev_alt_available=("rev_alt", "count"),
+                     next_return_available=("next_return", "count")))
+    for name in ("mom", "rev", "rev_alt", "next_return"):
+        coverage[f"{name}_missing"] = coverage["industries"] - coverage[f"{name}_available"]
+    return coverage
 
 
 def signal_summary(panel: pd.DataFrame) -> pd.DataFrame:
@@ -293,7 +296,7 @@ def main() -> None:
     print(horizons.to_string(index=False))
     corr = mom_rev_cross_sectional_corr(signal)
     corr.to_csv(config.TABLES / "mom_rev_xs_corr_by_month.csv", index=False)
-    plot_mom_rev_corr(corr, config.FIGURES / "mom_rev_xs_corr.png")
+    plot_mom_rev_corr(corr, config.FIGURES / "mom_rev_correlation.png")
     print(summary.to_string(index=False))
     print(f"mean monthly MOM-REV correlation: {corr['corr'].mean():.3f}")
     print(f"signals: {len(signal):,} industry-months through {signal['month'].max():%Y-%m}")

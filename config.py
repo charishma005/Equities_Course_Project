@@ -24,8 +24,10 @@ TABLES = RESULTS / "tables"
 # Phase 1: data pulls
 # --------------------------------------------------------------------------
 IBES_START = "1985-01-01"          # first statpers pulled
+IBES_SENSITIVITY_START = "2026-01-01"  # start of separate 2026 price sensitivity
 CRSP_START = "1984-01-01"          # one year before signals, for lookbacks
 LINK_MAX_SCORE = 2                 # keep I/B/E/S-CRSP links with score <= 2
+SENSITIVITY_MAX_PRICE_AGE_DAYS = 31
 
 KF_BASE_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
 KF_FILES = {

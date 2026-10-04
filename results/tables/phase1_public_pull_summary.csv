@@ -1,0 +1,9 @@
+file,rows,min_date,max_date
+kf_ind49_vw.parquet,1202,1926-07-31,2026-08-31
+kf_ind30_vw.parquet,1202,1926-07-31,2026-08-31
+kf_ff5.parquet,758,1963-07-31,2026-08-31
+kf_umd.parquet,1196,1927-01-31,2026-08-31
+kf_strev.parquet,1207,1926-02-28,2026-08-31
+kf_sic49.parquet,598,,
+kf_sic30.parquet,587,,
+fred_macro.parquet,605,1976-06-30,2026-10-31

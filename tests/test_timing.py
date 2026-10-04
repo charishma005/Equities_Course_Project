@@ -130,11 +130,36 @@ def test_missing_revision_months_stay_missing_and_window_is_not_shifted():
 def test_phase3_outputs(tmp_path):
     panel = _build()
     cov = signal_coverage(panel)
-    assert (cov["total_industries"] == 3).all()
-    assert (cov["mom_industries"] + cov["mom_missing"] == 3).all()
+    assert (cov["industries"] == 3).all()
+    assert (cov["mom_available"] + cov["mom_missing"] == 3).all()
     summary = signal_summary(panel).set_index("signal")
     assert summary.loc["mom_z", "months_covered"] == len(MONTHS) - 11  # 11-month window
     corr = mom_rev_cross_sectional_corr(panel)
     assert corr["corr"].between(-1, 1).all()
     png = plot_mom_rev_corr(corr, tmp_path / "corr.png")
     assert png.exists() and png.stat().st_size > 0
+
+
+def test_signal_at_t_uses_only_returns_through_t_minus_1_and_targets_t_plus_1():
+    dates = pd.date_range("2020-01-31", periods=4, freq="ME")
+    returns = pd.DataFrame({
+        "date": dates,
+        "Agric": [0.10, 0.20, 0.30, 0.40],
+        "Other": [0.01, 0.02, 0.03, 0.04],
+    })
+    sic_ranges = pd.DataFrame({
+        "industry": [1], "short": ["Agric"], "sic_lo": [100], "sic_hi": [199],
+    })
+    ibes = pd.DataFrame(columns=[
+        "permno", "month", "fpedats", "numest", "numup", "numdown", "meanest",
+        "prc", "mktcap", "industry",
+    ])
+
+    signals = build_signals(ibes, returns, sic_ranges, lookback=3, skip=1)
+    march = signals.loc[
+        signals["month"].eq(pd.Timestamp("2020-03-31"))
+        & signals["industry"].eq(1)
+    ].iloc[0]
+
+    assert march["mom"] == pytest.approx((1.10 * 1.20) - 1)
+    assert march["next_return"] == pytest.approx(0.40)

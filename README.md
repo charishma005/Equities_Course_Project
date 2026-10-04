@@ -24,6 +24,7 @@ prompts for your password and offers to create `~/.pgpass`. Optionally set
 |---|---|---|
 | 1. Data pulls (WRDS) | `python -m src.pull_wrds` | `data/raw/*.parquet` (not in git) |
 | 1. Data pulls (public) | `python -m src.pull_public` | `data/raw/kf_*.parquet`, `fred_macro.parquet` |
+| Optional 2026 revision sensitivity | `python -m src.pull_2026_sensitivity && python -m src.sensitivity_2026` | separately flagged sensitivity parquet and coverage CSV |
 | 2. Clean and link | `python -m src.clean` | `data/interim/*.parquet`, coverage tables |
 | 3. Build signals | `python -m src.signals` | `data/processed/signals.parquet`, coverage tables, MOM–REV correlation figure |
 | 4–8. IC, risk, portfolio, attribution, robustness | not yet implemented | |
@@ -76,21 +77,37 @@ through October 2026; do not interpret carried CRSP characteristics as current
 prices. The linked panel includes `crsp_date`, `price_age_months`, and a blank
 `prc` whenever the attached CRSP observation is carried forward.
 
-### Phases 2–3: cleaning and signals (code updated 2026-10-04; rerun needed)
+### Phases 2–3: cleaning and signals (rebuilt 2026-10-04)
 
-- Momentum now follows CLAUDE.md 5.1: months t-11 through t-1, skipping only
-  month t. The earlier version used t-12 through t-2.
-- CRSP market cap and SIC are carried forward only for months after CRSP ends
-  (CLAUDE.md 4.4). The earlier version also carried them across mid-sample gaps
-  (5,234 rows); those firm-months are now dropped.
-- 2026: primary REV and REV_ALT are missing from January 2026 on and stay
-  missing (CLAUDE.md 4.4). MOM runs through August 2026; its last evaluable
-  month is July 2026. The recent window stays March 2025–August 2026, and
-  `results/tables/signal_coverage_by_horizon.csv` reports how many months each
-  signal covers in each window.
-- New outputs: `ibes_industry_coverage.csv` now flags industry-months with fewer
-  than 5 eligible firms; `signal_coverage_by_month.csv`,
-  `signal_coverage_by_horizon.csv`, `mom_rev_xs_corr_by_month.csv`, and
-  `results/figures/mom_rev_xs_corr.png`.
-- Key numbers (link rates by year, carried rows, coverage): TBD after rerunning
-  `python -m src.clean` and `python -m src.signals`.
+- The cleaned CRSP panel has 2,861,589 stock-months through December 2025. The
+  I/B/E/S-linked panel has 1,851,249 firm-months through December 2025. CRSP
+  characteristics are no longer carried across missing security-months while
+  the overall CRSP panel still covers that period; zero rows are carried in
+  the current output.
+- I/B/E/S ticker-month link rate is 87.7% in 2025 and 0% in 2026. The full
+  coverage grid has 24,500 month-industry cells; 1,037 have fewer than five
+  linked firms. All 392 cells from January–August 2026 have zero linked firms.
+  Review `ibes_link_rate_by_year.csv` and `ibes_industry_coverage.csv` with the
+  team at the Phase 2 checkpoint.
+- The MOM window now compounds industry returns from `t-11` through `t-1`.
+  The signal panel has 58,898 industry-months through August 2026. MOM is
+  available for all 392 2026 rows; REV and REV_ALT are missing for all of them.
+  `next_return` is present for 343 rows (January–July 2026); August's
+  following-month return is not yet available.
+- `signal_coverage_by_month.csv` records monthly available/missing counts.
+  `results/figures/mom_rev_correlation.png` contains 492 monthly MOM–REV
+  cross-sectional correlations from January 1985 through December 2025.
+- An **optional sensitivity only** is stored separately in
+  `data/processed/signals_2026_sensitivity.parquet`; it uses exact CUSIP matches
+  to one PERMNO at the December 2025 CRSP names reference date, ACTPSUM USD
+  prices/shares with a recent pricing date, and December 2025 SIC/industry
+  assignments. It has 392 industry-month rows: 373 with REV and 309 with
+  REV_ALT. It does not replace or fill the primary `signals.parquet` values.
+- **Team decision still pending:** whether `ibcrsphist` links whose `edate` is
+  the table's last date may be treated as active beyond that date. No end-date
+  extension has been applied. The separate CUSIP sensitivity is not proof that
+  all such ticker links remain valid.
+- `signal_coverage_by_horizon.csv` reports, for the full sample, post-2010, and
+  the planned recent window (March 2025–August 2026, not shifted), how many
+  months each signal has and how many are evaluable (signal and next-month
+  return both present). Rerun `python -m src.signals` to produce it.

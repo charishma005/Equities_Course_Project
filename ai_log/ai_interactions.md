@@ -95,5 +95,12 @@ panel with REV and REV_ALT missing, the window stays March 2025–August
 2026, and coverage per signal is reported instead. The decision was
 written into CLAUDE.md 4.4 and 10.1.
 
+**Parallel work:** a teammate pushed the same momentum and carry-forward
+fixes, a 49-industry coverage grid, and the separate 2026 CUSIP/ACTPSUM
+sensitivity while this session was running. The merge kept the teammate's
+versions where the two overlapped (their committed result tables were made
+with them) and kept this session's horizon-coverage table, future-data
+invariance test, and plan-compliant figure styling.
+
 **Critical evaluation (to be written by the team):**
 

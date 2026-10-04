@@ -3,8 +3,9 @@
 This guide describes the data currently collected for the industry momentum and
 analyst-revision project, how the source tables are cleaned and joined, what the
 sample tables represent, and how to interpret their fields. Coverage figures
-below reflect the refresh run on **October 3, 2026**; provider coverage can
-change on later pulls.
+Input-pull coverage below reflects the refresh run on **October 3, 2026**;
+cleaning and signal outputs were rebuilt on October 4 after the documented
+method corrections. Provider coverage can change on later pulls.
 
 ## 1. Pipeline at a Glance
 
@@ -31,6 +32,9 @@ python -m src.pull_wrds --force
 python -m src.pull_public --force
 python -m src.clean
 python -m src.signals
+# Optional sensitivity only; does not change signals.parquet
+python -m src.pull_2026_sensitivity
+python -m src.sensitivity_2026
 ```
 
 WRDS requires an active university account and credentials. Credentials are not
@@ -52,12 +56,18 @@ exist. Raw WRDS data is licensed and should remain untracked; `data/raw/` and
 - `crsp.msf_v2` and `crsp.stocknames_v2`: current CRSP CIZ monthly returns,
   prices, shares, and historical security/name data. The pull contains
   2,880,406 monthly rows from January 1984 through December 2025.
+- Optional sensitivity: `ibes.actpsum_epsus` provides `price`, `prdays`,
+  `shout` (shares outstanding in millions), and `curr_price`. The sensitivity
+  pull filters to 2026 onward, `measure='EPS'`, and `usfirm=1`.
 
 The query has no December 2025 end-date filter. December 2025 is the latest
 monthly CRSP date returned by WRDS for the account and tables used in this run.
 I/B/E/S extends into 2026, but the current link history yields no linked
 I/B/E/S firm-months in 2026. The linked firm-month panel therefore ends in
 December 2025. Do not fill this gap with invented or forward-dated prices.
+The sensitivity instead uses the ACTPSUM price/shares and exact CUSIP matches
+to the CRSP names record valid on the final available CRSP date. It is a
+separate robustness view, not an extension of the primary `ibcrsphist` links.
 
 ### Public data pulled by the project
 
@@ -88,14 +98,19 @@ configured lag when using them in a model. Do not treat the partial October
 | `data/raw/ibes_statsum.parquet` | Ticker and analyst snapshot / fiscal period | 2,241,796 rows; 1985-01-17 to 2026-08-20 |
 | `data/raw/crsp_msf.parquet` | PERMNO and CRSP month | 2,880,406 rows; 1984-01-31 to 2025-12-31 |
 | `data/interim/crsp_monthly.parquet` | Eligible PERMNO and month | 2,861,589 rows; 1984-01-31 to 2025-12-31 |
-| `data/interim/ibes_crsp_monthly.parquet` | Linked PERMNO and I/B/E/S month | 1,856,483 rows; 1985-01-31 to 2025-12-31 |
+| `data/interim/ibes_crsp_monthly.parquet` | Linked PERMNO and I/B/E/S month | 1,851,249 rows; 1985-01-31 to 2025-12-31 |
 | `data/processed/signals.parquet` | Fama-French industry and signal month | 58,898 rows; 1926-07-31 to 2026-08-31 |
+| `data/processed/signals_2026_sensitivity.parquet` | 2026 CUSIP/ACTPSUM sensitivity by industry-month | 392 rows; 2026-01-31 to 2026-08-31 |
 
 The signal table has 49 industry rows per month, including months when a
 particular signal is missing. Its 58,898 rows cover 1,202 months. The raw
-momentum field is present in 55,432 rows; raw REV in 22,390; raw alternative REV
+momentum field is present in 55,481 rows; raw REV in 22,387; raw alternative REV
 in 20,330; and `next_return` in 55,990. These counts differ because the signals
-have different lookback and data-coverage requirements.
+have different lookback and data-coverage requirements. Monthly counts are
+saved in `results/tables/signal_coverage_by_month.csv`.
+The separate sensitivity has 373 nonmissing `rev_sens` cells and 309 nonmissing
+`rev_alt_sens` cells; these do not fill the missing REV values in the primary
+signal table.
 
 ### Example: AAPL linked firm-months
 
@@ -133,11 +148,12 @@ the price also changed. These fields measure different things.
 - Join ticker to PERMNO only when the link is valid on the actual `statpers`
   date and its score is at most 2; among valid candidates prefer the lower
   score.
-- Backward-as-of join CRSP characteristics by PERMNO and month. Inside CRSP
-  coverage the CRSP row must be from the same month. Only for months after
-  CRSP ends may a prior market cap and SIC/industry be carried, for at most 12
-  months, and those rows are flagged. The price itself is **not** carried: `prc` is missing when the
-  linked CRSP observation is from an earlier month. `crsp_date` and
+- Backward-as-of join CRSP characteristics by PERMNO and month. Within the
+  overall CRSP coverage period, a security-specific missing month is dropped;
+  it is not filled from that security's previous record. Only months after the
+  dataset-wide CRSP end date may carry market cap and SIC/industry for at most
+  12 months, with a flag. The price itself is **not** carried: `prc` is missing
+  when the linked CRSP observation is from an earlier month. `crsp_date` and
   `price_age_months` expose the match date and age.
 - The output is deduplicated to one record per PERMNO and month.
 
@@ -149,6 +165,7 @@ the price also changed. These fields measure different things.
   industry IDs.
 - Preserve unavailable signal values as missing. Standardization no longer
   turns missing values into zeros.
+- Save monthly valid/missing counts and a MOM–REV correlation figure.
 
 ## 5. Column Dictionary and Formulas
 
@@ -194,7 +211,7 @@ Each row is one industry at the end of `month`.
 |---|---|---|
 | `month` | Month-end signal date `t` | Information is aligned to the end of this month. |
 | `industry` | Numeric Fama-French 49 industry ID | Values 1–49; 49 is Other. |
-| `mom` | `product(1 + R[i,t-k]) - 1` for `k=1,...,11` | Raw 12–1 industry momentum: compound the 11 returns from `t-11` through `t-1`, skipping the most recent month `t`. |
+| `mom` | `product(1 + R[i,t-k]) - 1` for `k=1,...,11` | Compound the 11 industry returns from `t-11` through `t-1`; the signal month `t` itself is excluded. |
 | `rev` | Market-cap-weighted mean of firm `(numup - numdown) / numest` | Main revision-breadth signal. A firm needs at least 3 estimates; an industry needs at least 5 contributing firms. The ratio is not assumed to be bounded by ±1 because revision counts need not partition current estimates. |
 | `rev_firms` | Distinct contributing PERMNO count for `rev` | If fewer than 5 firms contribute, `rev` is missing for that industry-month. |
 | `rev_alt` | Market-cap-weighted mean of firm `(meanest[t] - meanest[t-3]) / abs(prc[t])` | Alternative consensus-change signal. Both snapshots must have at least 3 estimates and the same `fpedats`; current price must be present and nonzero. Firm values are winsorized monthly at the 1st/99th percentiles before industry aggregation; at least 5 firms are required. |
@@ -210,6 +227,28 @@ those observed values receive zero; missing industries remain missing. A zero
 is therefore a real standardized neutral value only when the corresponding raw
 signal is present.
 
+### `signals_2026_sensitivity.parquet` (optional; not primary)
+
+This separate file keeps the 2026 ACTPSUM/CUSIP method visible rather than
+silently mixing it into `signals.parquet`.
+
+| Column | Meaning | Interpretation |
+|---|---|---|
+| `month`, `industry` | Month-end and numeric Fama-French industry ID | One row for every industry and each of the eight 2026 months. |
+| `rev_sens`, `rev_sens_firms` | Main market-cap-weighted revision and contributing firm count | Uses `(numup - numdown) / numest`; market cap is ACTPSUM price × shares. Requires at least 3 estimates per firm and 5 firms per industry. |
+| `rev_alt_sens`, `rev_alt_sens_firms` | Three-month same-fiscal-period consensus change divided by current ACTPSUM price, and contributing firm count | Requires at least 3 analysts in both snapshots, a valid current price, and 5 firms per industry. |
+| `rev_sens_z`, `rev_alt_sens_z` | Monthly cross-industry z-scores clipped to ±3 | Missing values stay missing. |
+| `sensitivity_only` | Always true | Identifies this as a non-primary analysis. |
+| `link_method` | `exact_cusip_unique_permno` | CUSIP must map to exactly one PERMNO in the CRSP reference snapshot; `ibcrsphist` dates are not extended. |
+| `price_source` | `ibes.actpsum_epsus` | Price must be USD, positive, and dated on/before `statpers` within 31 days. |
+| `market_cap_source` | ACTPSUM price × `shout` | `shout` is shares outstanding in millions, so weights use USD millions. |
+| `industry_source` | SIC from CRSP names at the reference date, carried into 2026 | This carries the last observed SIC for the sensitivity only. |
+| `crsp_reference_date` | Latest CRSP date used for the CUSIP/SIC mapping | Currently December 31, 2025. |
+
+The matching is conservative: unmatched CUSIPs, multiple-PERMNO CUSIPs,
+ACTPSUM/estimate CUSIP disagreements, non-USD prices, and missing, nonpositive,
+or stale price/share data are excluded. The primary signal table is unchanged.
+
 ### Other public table columns
 
 - `kf_ind49_vw` / `kf_ind30_vw`: `date` plus one decimal monthly return column
@@ -224,23 +263,34 @@ signal is present.
   yield) and `T10Y2Y` (10-year less 2-year Treasury yield), monthly averages in
   published percentage-point units.
 - `phase1_wrds_pull_summary.csv`, `phase1_public_pull_summary.csv`,
-  `ibes_link_rate_by_year.csv`, `ibes_industry_coverage.csv`, and
-  `signal_summary.csv` are diagnostic outputs, not model feature panels.
+  `ibes_link_rate_by_year.csv`, `ibes_industry_coverage.csv`,
+  `signal_coverage_by_month.csv`, `signal_summary.csv`, and
+  `sensitivity_2026_coverage.csv` are diagnostic outputs, not model feature
+  panels. The MOM–REV correlation plot is saved to
+  `results/figures/mom_rev_correlation.png`.
 
 ## 6. Data Quality Findings and Safe Inference
 
 - **Coverage gap:** the CRSP pull ends in December 2025 while I/B/E/S summaries
   reach August 2026. The link file produces no linked 2026 firm-months. The
   2026 signal rows therefore have missing `rev` and `rev_alt`; do not read them
-  as zero or use them to evaluate those revision signals. Any 2026 revision
-  values built from another matching or price source (CUSIP links, I/B/E/S
-  `actpsum` prices) are an exploratory sensitivity, reported separately and
-  labeled with their source, never merged into the primary panel.
+  as zero or use them to evaluate those revision signals, and never fill them
+  with sensitivity values.
+- **Separate sensitivity:** exact 2026 I/B/E/S CUSIPs are matched to a unique
+  PERMNO in the latest CRSP names snapshot. ACTPSUM prices/shares are used only
+  for the sensitivity; December 2025 SIC is carried for those 2026 rows. The
+  sensitivity has 373 REV and 309 REV_ALT industry-months available. It is not
+  the primary signal and does not validate extending annual `ibcrsphist` links.
+- **Phase 2 link rate:** the link rate is 87.7% in 2025 and 0% in 2026. The
+  coverage table explicitly includes all 49 industries for every I/B/E/S
+  snapshot month and flags industry-months with fewer than five linked firms;
+  all 392 2026 cells are flagged with zero firms.
 - **No following-month return yet:** Ken French industry returns end in August
   2026, so August signal rows do not have September `next_return` values.
-- **Carried characteristics:** CRSP market cap and industry are carried forward
-  only for months after CRSP ends (at most 12 months), with price blanked. Within
-  CRSP coverage, a firm-month without a CRSP row is dropped rather than filled.
+- **Carried characteristics:** no rows are carried in the current rebuilt
+  output. Carry is limited to months after the dataset-wide CRSP end date;
+  within covered CRSP history, a security-specific missing month is excluded.
+  For future post-end carry rows, compare results with and without them.
 - **I/B/E/S counts:** the pull contains records where `numup + numdown >
   numest`. WRDS labels these fields “Number Up” and “Number Down” but does not
   establish that they are mutually exclusive parts of `numest`; do not filter
@@ -262,7 +312,11 @@ signal is present.
 - **Count filters:** REV requires at least 3 estimates per firm and 5 firms per
   industry-month. REV_ALT additionally requires at least 3 estimates in both
   the current and lagged snapshots and a current, nonzero price.
+- **Open team decision:** whether a link with `edate` equal to the link table's
+  last observation date may be treated as continuing past that date. No such
+  extension is applied pending team approval; 2026 REV should remain missing.
 
 The data-pull and cleaning summaries are saved under `results/tables/`. The
-current regression tests include date alignment, industry aggregation,
-missing-value preservation, and the lagged analyst-coverage rule.
+current regression tests include end-to-end date alignment, the momentum window,
+industry coverage and aggregation, missing-value preservation, the lagged
+analyst-coverage rule, and CUSIP/ACTPSUM sensitivity eligibility.
