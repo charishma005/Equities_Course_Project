@@ -35,6 +35,7 @@ python -m src.signals
 # Optional sensitivity only; does not change signals.parquet
 python -m src.pull_2026_sensitivity
 python -m src.sensitivity_2026
+python -m src.ic
 ```
 
 WRDS requires an active university account and credentials. Credentials are not
@@ -320,3 +321,32 @@ The data-pull and cleaning summaries are saved under `results/tables/`. The
 current regression tests include end-to-end date alignment, the momentum window,
 industry coverage and aggregation, missing-value preservation, the lagged
 analyst-coverage rule, and CUSIP/ACTPSUM sensitivity eligibility.
+
+## 7. Phase 4: IC and Blend
+
+Run `python -m src.ic` after rebuilding `signals.parquet`. It evaluates each
+month-t z-score against the corresponding `next_return` (industry return at
+t+1), reporting both Spearman rank IC and Pearson correlation. The summary
+table includes valid IC months, industry-month pairs, and coverage counts for
+the full sample, post-2010, and the fixed most-recent-18-month window.
+
+REV-orthogonal is calculated each month by an OLS regression of `rev_z` on
+`mom_z` across industries where both are observed; the residual is then tested
+against next-month returns. It is a diagnostic test, not a replacement for
+REV.
+
+Blend weights follow `w proportional to R inverse times mean IC`. At signal
+month t, both the expanding mean-Spearman-IC vector and the MOM/REV correlation
+matrix use only history from signal months strictly before t. That history's
+next-month returns are observable by t, and at least 60 joint MOM/REV IC months
+are required. Weights are normalized to sum to one. `blend_z` remains missing
+unless both MOM and REV are available; it is not filled from the separate 2026
+sensitivity.
+
+Outputs are `ic_by_month.csv`, `ic_summary_by_horizon.csv`,
+`blend_weights_by_month.csv`, and `signals_phase4.parquet` under the documented
+results/data directories. Figures are `rolling_ic_mom_rev.png` and
+`blend_weights.png` under `results/figures/`. With current data, the recent
+March 2025–August 2026 window has 17 evaluable MOM months and 10 evaluable REV,
+REV_ALT, REV-orthogonal, and blend months. Treat those shorter revision samples
+as low-power descriptive evidence, not complete 18-month estimates.

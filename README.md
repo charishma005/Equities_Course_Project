@@ -27,7 +27,8 @@ prompts for your password and offers to create `~/.pgpass`. Optionally set
 | Optional 2026 revision sensitivity | `python -m src.pull_2026_sensitivity && python -m src.sensitivity_2026` | separately flagged sensitivity parquet and coverage CSV |
 | 2. Clean and link | `python -m src.clean` | `data/interim/*.parquet`, coverage tables |
 | 3. Build signals | `python -m src.signals` | `data/processed/signals.parquet`, coverage tables, MOM–REV correlation figure |
-| 4–8. IC, risk, portfolio, attribution, robustness | not yet implemented | |
+| 4. IC and blend | `python -m src.ic` | IC/horizon tables, orthogonal REV, expanding blend, figures |
+| 5–8. Risk, portfolio, attribution, robustness | not yet implemented | |
 
 Tests: `python -m pytest -q tests`
 
@@ -111,3 +112,21 @@ prices. The linked panel includes `crsp_date`, `price_age_months`, and a blank
   the planned recent window (March 2025–August 2026, not shifted), how many
   months each signal has and how many are evaluable (signal and next-month
   return both present). Rerun `python -m src.signals` to produce it.
+
+### Phase 4: IC and blend (run 2026-10-04)
+
+- `python -m src.ic` writes `ic_by_month.csv`, `ic_summary_by_horizon.csv`,
+  `blend_weights_by_month.csv`, and `data/processed/signals_phase4.parquet`;
+  it also saves rolling-IC and blend-weight figures.
+- IC uses the primary signal at month `t` against `next_return` at `t+1`.
+  REV is residualized against MOM cross-sectionally for the orthogonal test.
+  Expanding weights for month `t` use only past paired IC observations and
+  signal correlations through `t-1`; at least 60 paired IC months are required.
+- In the required recent 18-month window, MOM has 17 evaluable months because
+  August 2026 lacks September returns. REV and REV_ALT each have 10 evaluable
+  months because primary I/B/E/S links end in 2025. Spearman mean ICs: MOM
+  0.0147, REV -0.0100, REV_ALT -0.0042, REV-orthogonal 0.0220, blended 0.0177.
+  These are descriptive with limited coverage and should not be treated as
+  high-confidence recent evidence.
+- Primary 2026 REV remains missing. The CUSIP/ACTPSUM sensitivity remains a
+  separate file and is not included in these primary ICs or weights.

@@ -75,6 +75,7 @@ ROLLING_CORR_MONTHS = 12
 # --------------------------------------------------------------------------
 BLEND_MIN_MONTHS = 60
 ROLLING_IC_MONTHS = 12
+IC_MIN_INDUSTRIES = 3
 
 # --------------------------------------------------------------------------
 # Phase 5: risk and portfolio

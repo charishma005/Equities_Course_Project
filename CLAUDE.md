@@ -250,25 +250,36 @@ All signals are formed at the end of month `t`, cross-sectionally across the 49 
 - Monthly IC = Spearman rank correlation between signal z-scores at `t` and industry
   returns at `t+1`. Also compute Pearson as a check.
 - Report for each signal: mean IC, std of IC, IC t-stat, IC information ratio,
-  % of months with IC > 0.
+  % of months with IC > 0, valid IC month count, and industry-month pair count.
 - Report for full sample, post-2010, and the most recent 18 months.
+- For each window also report requested months, months with any raw signal,
+  evaluable IC months, and industry-months with signal coverage. Keep the recent
+  window fixed to the most recent 18 signal months even when REV is missing.
 - Figure: 12-month rolling mean IC for MOM and REV on one chart.
 
 ### 6.2 Incremental information
 - Regress REV z-scores on MOM z-scores each month; the residual is the part of REV
   orthogonal to momentum. Compute its IC. This is a direct test of the thesis.
+- Preserve missing industries. Require at least `IC_MIN_INDUSTRIES` paired
+  signal/return observations to calculate a monthly IC.
 
 ### 6.3 Blending (HW02 method)
 - `w ∝ R^{-1} · IC`, where `R` is the correlation matrix of the two signals and `IC` is the
   vector of mean ICs.
-- Estimate `R` and `IC` on an **expanding window using data through month `t` only**,
-  with a minimum of 60 months before the first blended signal.
+- Estimate `R` and `IC` on an **expanding window using information observable by
+  month `t` only**: paired ICs and cross-signal correlations from signal months
+  strictly before `t`. Require 60 joint MOM/REV IC months before the first blend.
 - Normalize weights to sum to 1. Blended score = `w_mom * mom_z + w_rev * rev_z`,
-  re-standardized cross-sectionally.
+  re-standardized cross-sectionally only where both signals are available.
 - Figure: blend weights over time.
+- Outputs: `results/tables/ic_by_month.csv`,
+  `results/tables/ic_summary_by_horizon.csv`,
+  `results/tables/blend_weights_by_month.csv`, and
+  `data/processed/signals_phase4.parquet`.
 
 ### Acceptance checks
-- Blend weights at month `t` depend only on data through `t` (add a test).
+- Blend weights at month `t` depend only on data through `t` (test that changing
+  month-`t` or future returns cannot change month-`t` weights).
 - Table: IC statistics for MOM, REV, REV-orthogonal, and blended signal.
 
 ---
