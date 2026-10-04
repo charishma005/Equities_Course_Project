@@ -1,0 +1,180 @@
+"""Construct value-weighted industry momentum and I/B/E/S revision signals."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import config  # noqa: E402
+from src.utils import to_month_end  # noqa: E402
+
+
+def momentum_signal(returns: pd.DataFrame, lookback: int = config.MOM_LOOKBACK,
+                    skip: int = config.MOM_SKIP) -> pd.DataFrame:
+    """Compute 12-1 style compounded momentum by industry.
+
+    Input is a month-end wide industry-return panel. For lookback 12 and skip
+    1, the signal at t compounds returns t-12 through t-2, excluding t-1.
+    Output has month, industry, and mom columns.
+    """
+    if lookback <= skip + 1:
+        raise ValueError("lookback must exceed skip + 1")
+    frame = returns.copy()
+    frame["date"] = to_month_end(frame["date"])
+    frame = frame.sort_values("date").set_index("date")
+    industries = [col for col in frame.columns if col != "date"]
+    period_count = lookback - skip
+    lag = skip + 1
+    compounded = (frame[industries].add(1).shift(lag)
+                  .rolling(period_count, min_periods=period_count)
+                  .apply(np.prod, raw=True).sub(1))
+    return (compounded.rename_axis("month").reset_index()
+            .melt(id_vars="month", var_name="industry", value_name="mom"))
+
+
+def industry_returns_long(returns: pd.DataFrame, sic_ranges: pd.DataFrame,
+                          other_industry: int = config.OTHER_INDUSTRY_49
+                          ) -> pd.DataFrame:
+    """Convert Ken French named industry columns to numeric industry IDs."""
+    names = (sic_ranges[["industry", "short"]].drop_duplicates()
+             .assign(short=lambda frame: frame["short"].astype(str).str.strip()))
+    by_name = dict(zip(names["short"], names["industry"].astype(int)))
+    by_name["Other"] = other_industry
+    frame = returns.copy()
+    frame["date"] = to_month_end(frame["date"])
+    cols = [col for col in frame.columns if col != "date"]
+    normalized = {str(col).strip(): col for col in cols}
+    missing = sorted(set(by_name) - set(normalized))
+    if missing:
+        raise ValueError(f"industry return columns missing from Ken French data: {missing}")
+    selected = frame[["date"] + [normalized[name] for name in by_name]]
+    result = selected.melt(id_vars="date", var_name="industry_name", value_name="ret")
+    result["industry"] = result["industry_name"].astype(str).str.strip().map(by_name)
+    result["ret"] = pd.to_numeric(result["ret"], errors="coerce")
+    return result.drop(columns="industry_name").rename(columns={"date": "month"})
+
+
+def industry_revisions(ibes: pd.DataFrame, min_analysts: int = config.MIN_ANALYSTS,
+                       min_firms: int = config.MIN_FIRMS_PER_INDUSTRY
+                       ) -> pd.DataFrame:
+    """Aggregate main and alternative revision measures by month and industry.
+
+    Main REV is the market-cap-weighted net-revision ratio. Alternative REV is
+    the same-period three-month consensus change scaled by absolute price,
+    winsorized cross-sectionally each month before value-weighted aggregation.
+    """
+    frame = ibes.copy()
+    frame["month"] = to_month_end(frame["month"])
+    frame["industry"] = pd.to_numeric(frame["industry"], errors="coerce")
+    frame["fpedats"] = pd.to_datetime(frame["fpedats"], errors="coerce")
+    for col in ("numest", "numup", "numdown", "meanest", "mktcap", "prc"):
+        frame[col] = pd.to_numeric(frame[col], errors="coerce")
+    frame = frame.sort_values(["permno", "fpedats", "month"])
+    prior = frame[["permno", "fpedats", "month", "meanest", "numest"]].copy()
+    prior["month"] = prior["month"] + pd.offsets.MonthEnd(config.REV_ALT_LAG_MONTHS)
+    prior = prior.rename(columns={"meanest": "meanest_lag", "numest": "numest_lag"})
+    frame = frame.drop(columns=[c for c in frame.columns if c.startswith("meanest_lag")], errors="ignore")
+    frame = frame.merge(prior, on=["permno", "fpedats", "month"], how="left",
+                        validate="many_to_one")
+
+    valid = (frame["numest"].ge(min_analysts) & frame["mktcap"].gt(0)
+             & frame["industry"].notna())
+    frame["rev_firm"] = ((frame["numup"] - frame["numdown"]) / frame["numest"])
+    frame.loc[~valid, "rev_firm"] = np.nan
+    frame["rev_alt_firm"] = ((frame["meanest"] - frame["meanest_lag"])
+                             / frame["prc"].abs())
+    frame.loc[~valid | frame["numest_lag"].lt(min_analysts)
+              | frame["prc"].isna() | frame["prc"].eq(0), "rev_alt_firm"] = np.nan
+
+    quantiles = (frame.groupby("month")["rev_alt_firm"]
+                 .quantile(list(config.REV_ALT_WINSOR)).unstack())
+    if not quantiles.empty:
+        frame["rev_alt_firm"] = frame["rev_alt_firm"].clip(
+            lower=frame["month"].map(quantiles[config.REV_ALT_WINSOR[0]]),
+            upper=frame["month"].map(quantiles[config.REV_ALT_WINSOR[1]]))
+
+    def aggregate(column: str, label: str) -> pd.DataFrame:
+        usable = frame.loc[frame[column].notna()].copy()
+        usable["weighted_value"] = usable[column] * usable["mktcap"]
+        grouped = (usable.groupby(["month", "industry"], as_index=False)
+                   .agg(weighted_value=("weighted_value", "sum"),
+                        total_cap=("mktcap", "sum"),
+                        firms=("permno", "nunique")))
+        grouped[label] = grouped["weighted_value"] / grouped["total_cap"]
+        grouped.loc[grouped["firms"] < min_firms, label] = np.nan
+        return grouped[["month", "industry", label, "firms"]]
+
+    main = aggregate("rev_firm", "rev")
+    alt = aggregate("rev_alt_firm", "rev_alt").rename(columns={"firms": "rev_alt_firms"})
+    result = main.merge(alt, on=["month", "industry"], how="outer")
+    return result.rename(columns={"firms": "rev_firms"})
+
+
+def _zscore(values: pd.Series, winsor: float) -> pd.Series:
+    """Cross-sectionally standardize values while preserving missing observations."""
+    available = values.notna()
+    standardized = pd.Series(np.nan, index=values.index, dtype="float64")
+    if not available.any():
+        return standardized
+    scale = values.loc[available].std(ddof=0)
+    if pd.isna(scale) or scale == 0:
+        standardized.loc[available] = 0.0
+        return standardized
+    standardized.loc[available] = (
+        (values.loc[available] - values.loc[available].mean()) / scale
+    ).clip(-winsor, winsor)
+    return standardized
+
+
+def attach_next_month_returns(signals: pd.DataFrame,
+                              returns_long: pd.DataFrame) -> pd.DataFrame:
+    """Attach return in calendar month t+1 to signals formed at month-end t."""
+    future = returns_long[["month", "industry", "ret"]].copy()
+    future["month"] = to_month_end(future["month"] - pd.offsets.MonthEnd(1))
+    future = future.rename(columns={"ret": "next_return"})
+    return signals.merge(future, on=["month", "industry"], how="left", validate="one_to_one")
+
+
+def build_signals(ibes: pd.DataFrame, industry_returns: pd.DataFrame,
+                  sic_ranges: pd.DataFrame, lookback: int = config.MOM_LOOKBACK,
+                  skip: int = config.MOM_SKIP,
+                  min_analysts: int = config.MIN_ANALYSTS,
+                  min_firms: int = config.MIN_FIRMS_PER_INDUSTRY) -> pd.DataFrame:
+    """Build the full industry signal panel with one-month-ahead returns."""
+    returns_long = industry_returns_long(industry_returns, sic_ranges)
+    momentum = momentum_signal(industry_returns, lookback, skip)
+    revisions = industry_revisions(ibes, min_analysts, min_firms)
+
+    names = (sic_ranges[["industry", "short"]].drop_duplicates()
+             .assign(short=lambda frame: frame["short"].astype(str).str.strip()))
+    by_name = dict(zip(names["short"], names["industry"].astype(int)))
+    by_name["Other"] = config.OTHER_INDUSTRY_49
+    momentum["industry"] = momentum["industry"].astype(str).str.strip().map(by_name)
+    panel = momentum.merge(revisions, on=["month", "industry"], how="left")
+    panel = panel.sort_values(["month", "industry"])
+    for signal in ("mom", "rev", "rev_alt"):
+        panel[f"{signal}_z"] = panel.groupby("month")[signal].transform(
+            lambda values: _zscore(values, config.Z_WINSOR))
+    return attach_next_month_returns(panel, returns_long)
+
+
+def main() -> None:
+    """Build and save the processed signal panel from Phase 1 and Phase 2 outputs."""
+    signal = build_signals(
+        pd.read_parquet(config.DATA_INTERIM / "ibes_crsp_monthly.parquet"),
+        pd.read_parquet(config.DATA_RAW / "kf_ind49_vw.parquet"),
+        pd.read_parquet(config.DATA_RAW / "kf_sic49.parquet"),
+    )
+    signal.to_parquet(config.DATA_PROCESSED / "signals.parquet", compression="zstd", index=False)
+    config.TABLES.mkdir(parents=True, exist_ok=True)
+    stats = signal[["mom_z", "rev_z", "rev_alt_z"]].describe().T
+    stats.to_csv(config.TABLES / "signal_summary.csv", index_label="signal")
+    print(f"signals: {len(signal):,} industry-months through {signal['month'].max():%Y-%m}")
+
+
+if __name__ == "__main__":
+    main()

@@ -131,13 +131,14 @@ project/
 - **Output:** `data/raw/ibes_crsp_link.parquet`
 
 ### 3.3 CRSP
-- `crsp.msf`: `permno, date, ret, prc, shrout` from 1984-01-01 (one year before signals
-  start, for lookbacks)
-- `crsp.msenames`: `permno, namedt, nameendt, siccd, shrcd, exchcd`
-- `crsp.msedelist`: `permno, dlstdt, dlret`
-- **Output:** `data/raw/crsp_msf.parquet`, `crsp_msenames.parquet`, `crsp_msedelist.parquet`
-- **Check:** print the max `date` in `crsp.msf`. If CRSP ends earlier than I/B/E/S, log
-  the gap in `README.md` (see 4.4).
+- `crsp.msf_v2`: `permno, mthcaldt, mthret, mthprc, shrout` from 1984-01-01;
+  filter to common equity (`EQTY`/`COM`/`NS`) on NYSE, AMEX, or Nasdaq.
+- `crsp.stocknames_v2`: historical names and SIC codes, filtered to the same universe.
+- `mthret` is CRSP's monthly total return; do not apply a separate legacy delisting
+  return on top of it.
+- **Output:** normalized `data/raw/crsp_msf.parquet` and `crsp_msenames.parquet`.
+- **Check:** print the max CRSP date and compare it with I/B/E/S; record any gap in
+  `README.md` (see 4.4).
 
 ### 3.4 Ken French Data Library (public)
 - 49 Industry Portfolios, value-weighted, monthly (`49_Industry_Portfolios`)
@@ -160,11 +161,11 @@ project/
 ## 4. Phase 2 — Cleaning and industry mapping
 
 ### 4.1 CRSP stock universe
-- Keep `shrcd in (10, 11)` and `exchcd in (1, 2, 3)`, using the names record valid at
-  each date (`namedt <= date <= nameendt`).
+- Keep CIZ common equity (`EQTY`/`COM`/`NS`) on NYSE, AMEX, or Nasdaq, using the names
+  record valid at each date (`namedt <= date <= nameendt`).
 - Market cap = `abs(prc) * shrout` (in $ thousands).
-- Delisting: in the delisting month, total return = `(1 + ret) * (1 + dlret) - 1`; if
-  `ret` is missing, use `dlret`.
+- Use CIZ `mthret` as the monthly total return; it must not be combined again with
+  legacy delisting returns.
 
 ### 4.2 Map stocks to the 49 industries
 - Parse `Siccodes49` into SIC ranges → industry code.
@@ -181,7 +182,8 @@ project/
 
 ### 4.4 CRSP coverage gap
 - If CRSP ends before the I/B/E/S data, for the uncovered months carry forward the last
-  available market cap and SIC per permno (max 12 months), and flag those months. State
+  available market cap and SIC per permno (max 12 months), and flag those months. Do not
+  carry forward `prc`; set it missing and expose `crsp_date` and `price_age_months`. State
   this limitation in the report's data section.
 - Industry **returns** always come from Ken French's 49 industry portfolios, which are
   updated monthly, so the return side has no gap.
@@ -213,12 +215,15 @@ All signals are formed at the end of month `t`, cross-sectionally across the 49 
 
 ### 5.3 REV alternative (robustness)
 - Firm level: `(meanest_t - meanest_{t-3}) / |price_t|`, same fiscal period end
-  (`fpedats` unchanged) only. Winsorize at 1st/99th percentile each month.
+  (`fpedats` unchanged) only. Require `numest >= 3` in both snapshots and a current,
+  nonzero CRSP price. Winsorize at 1st/99th percentile each month.
 - Aggregate to industry the same way as 5.2.
 
 ### 5.4 Standardization
 - Each month, z-score each signal across available industries, then winsorize at ±3.
-- Missing industry values: set z = 0 (neutral) and record the count.
+- Preserve missing industry values as missing; do not interpret unavailable data as neutral.
+- If all values for a signal are missing in a month, leave all standardized values missing.
+- Record monthly coverage and missing counts.
 
 ### Output
 - `data/processed/signals.parquet`: (month, industry, mom_z, rev_z, rev_alt_z).

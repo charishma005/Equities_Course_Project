@@ -6,7 +6,7 @@ WRDS_USERNAME environment variable to skip the username prompt.
 
 Outputs (all in data/raw/, never committed):
     ibes_statsum.parquet, ibes_crsp_link.parquet,
-    crsp_msf.parquet, crsp_msenames.parquet, crsp_msedelist.parquet
+    crsp_msf.parquet, crsp_msenames.parquet
 
 Timing: raw dates are saved as-is (statpers, CRSP date). Conversion to
 month-end and the "latest statpers <= month end" rule happen in clean.py.
@@ -43,17 +43,21 @@ QUERIES = {
         WHERE score <= {config.LINK_MAX_SCORE}
     """,
     "crsp_msf": f"""
-        SELECT permno, date, ret, prc, shrout
-        FROM crsp.msf
-        WHERE date >= '{config.CRSP_START}'
+                SELECT permno, mthcaldt AS date, mthret AS ret,
+                             mthprc AS prc, shrout
+                FROM crsp.msf_v2
+                WHERE mthcaldt >= '{config.CRSP_START}'
+                    AND securitytype = 'EQTY' AND securitysubtype = 'COM'
+                    AND sharetype = 'NS' AND primaryexch IN ('N', 'A', 'Q')
     """,
     "crsp_msenames": """
-        SELECT permno, namedt, nameendt, siccd, shrcd, exchcd
-        FROM crsp.msenames
-    """,
-    "crsp_msedelist": """
-        SELECT permno, dlstdt, dlret
-        FROM crsp.msedelist
+                SELECT permno, namedt, nameenddt AS nameendt, siccd,
+                             TRUE AS common_stock,
+                             CASE primaryexch WHEN 'N' THEN 1 WHEN 'A' THEN 2
+                                                                WHEN 'Q' THEN 3 END AS exchcd
+                FROM crsp.stocknames_v2
+                WHERE securitytype = 'EQTY' AND securitysubtype = 'COM'
+                    AND sharetype = 'NS' AND primaryexch IN ('N', 'A', 'Q')
     """,
 }
 
