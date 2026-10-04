@@ -113,8 +113,9 @@ def link_ibes(ibes: pd.DataFrame, links: pd.DataFrame,
     """Link monthly I/B/E/S snapshots to CRSP using only contemporaneous history.
 
     Returns (firm-month panel, annual link-rate table). Links must be valid on
-    the actual statpers date; CRSP characteristics are backward-as-of joined
-    and carried no more than max_carry_months.
+    the actual statpers date. CRSP characteristics must come from the same
+    month, except for months after the last CRSP date, where they are carried
+    forward at most max_carry_months (price is blanked when carried).
     """
     estimates = ibes.copy()
     estimates["ticker"] = estimates["ticker"].astype("string").str.strip()
@@ -166,7 +167,13 @@ def link_ibes(ibes: pd.DataFrame, links: pd.DataFrame,
         candidates.loc[has_crsp, "date"].dt.to_period("M").astype("int64")
     )
     candidates["crsp_carried"] = month_gap.gt(0).fillna(False)
-    candidates = candidates.loc[month_gap.le(max_carry_months).fillna(False)].copy()
+    # CLAUDE.md 4.4: carry characteristics forward only for months after CRSP
+    # ends. Inside CRSP coverage a missing stock-month (e.g. the stock left the
+    # eligible universe) means the firm is not in the sample that month.
+    crsp_end = chars["date"].max()
+    after_crsp_end = candidates["month"].gt(crsp_end)
+    allowed = month_gap.eq(0) | (after_crsp_end & month_gap.le(max_carry_months))
+    candidates = candidates.loc[allowed.fillna(False)].copy()
     candidates["crsp_date"] = candidates["date"]
     candidates["price_age_months"] = month_gap.loc[candidates.index].astype("Int64")
     candidates.loc[candidates["crsp_carried"], "prc"] = np.nan
@@ -196,11 +203,34 @@ def main() -> None:
     save_parquet(ibes_panel, config.DATA_INTERIM / "ibes_crsp_monthly.parquet")
     config.TABLES.mkdir(parents=True, exist_ok=True)
     link_rates.to_csv(config.TABLES / "ibes_link_rate_by_year.csv", index=False)
-    coverage = (ibes_panel.groupby(["month", "industry"], as_index=False)
-                .agg(firms=("permno", "nunique")))
+    coverage = industry_coverage(ibes_panel)
     coverage.to_csv(config.TABLES / "ibes_industry_coverage.csv", index=False)
     print(link_rates.to_string(index=False))
-    print(f"CRSP rows: {len(stocks):,}; linked I/B/E/S firm-months: {len(ibes_panel):,}")
+    print(f"CRSP rows: {len(stocks):,}; linked I/B/E/S firm-months: {len(ibes_panel):,}; "
+          f"carried after CRSP end: {int(ibes_panel['crsp_carried'].sum()):,}")
+    flagged = coverage["below_min_firms"]
+    print(f"industry-months below {config.MIN_FIRMS_PER_INDUSTRY} eligible firms: "
+          f"{int(flagged.sum()):,} of {len(coverage):,}")
+
+
+def industry_coverage(ibes_panel: pd.DataFrame) -> pd.DataFrame:
+    """Covered firms per (month, industry), flagging thin industry-months.
+
+    Output: month, industry, linked_firms (all linked), eligible_firms (with
+    numest >= MIN_ANALYSTS and positive market cap, i.e. usable for REV), and
+    below_min_firms (eligible_firms < MIN_FIRMS_PER_INDUSTRY, so REV is
+    missing). Industry-months with no linked firms do not appear.
+    """
+    panel = ibes_panel.assign(
+        eligible=pd.to_numeric(ibes_panel["numest"], errors="coerce").ge(config.MIN_ANALYSTS)
+        & pd.to_numeric(ibes_panel["mktcap"], errors="coerce").gt(0))
+    linked = panel.groupby(["month", "industry"])["permno"].nunique().rename("linked_firms")
+    eligible = (panel.loc[panel["eligible"]].groupby(["month", "industry"])["permno"]
+                .nunique().rename("eligible_firms"))
+    out = pd.concat([linked, eligible], axis=1).fillna({"eligible_firms": 0})
+    out["eligible_firms"] = out["eligible_firms"].astype(int)
+    out["below_min_firms"] = out["eligible_firms"] < config.MIN_FIRMS_PER_INDUSTRY
+    return out.reset_index()
 
 
 if __name__ == "__main__":

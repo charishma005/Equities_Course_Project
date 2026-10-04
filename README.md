@@ -23,10 +23,9 @@ prompts for your password and offers to create `~/.pgpass`. Optionally set
 | Phase | Command | Output |
 |---|---|---|
 | 1. Data pulls (WRDS) | `python -m src.pull_wrds` | `data/raw/*.parquet` (not in git) |
-| 1. ...or import web-query downloads | `python -m src.import_wrds_files ~/Downloads/<file> ...` | same files as above |
 | 1. Data pulls (public) | `python -m src.pull_public` | `data/raw/kf_*.parquet`, `fred_macro.parquet` |
 | 2. Clean and link | `python -m src.clean` | `data/interim/*.parquet`, coverage tables |
-| 3. Build signals | `python -m src.signals` | `data/processed/signals.parquet`, signal summary |
+| 3. Build signals | `python -m src.signals` | `data/processed/signals.parquet`, coverage tables, MOM–REV correlation figure |
 | 4–8. IC, risk, portfolio, attribution, robustness | not yet implemented | |
 
 Tests: `python -m pytest -q tests`
@@ -76,3 +75,22 @@ CRSP ends 8 months before I/B/E/S statpers. The source did not provide data
 through October 2026; do not interpret carried CRSP characteristics as current
 prices. The linked panel includes `crsp_date`, `price_age_months`, and a blank
 `prc` whenever the attached CRSP observation is carried forward.
+
+### Phases 2–3: cleaning and signals (code updated 2026-10-04; rerun needed)
+
+- Momentum now follows CLAUDE.md 5.1: months t-11 through t-1, skipping only
+  month t. The earlier version used t-12 through t-2.
+- CRSP market cap and SIC are carried forward only for months after CRSP ends
+  (CLAUDE.md 4.4). The earlier version also carried them across mid-sample gaps
+  (5,234 rows); those firm-months are now dropped.
+- 2026: primary REV and REV_ALT are missing from January 2026 on and stay
+  missing (CLAUDE.md 4.4). MOM runs through August 2026; its last evaluable
+  month is July 2026. The recent window stays March 2025–August 2026, and
+  `results/tables/signal_coverage_by_horizon.csv` reports how many months each
+  signal covers in each window.
+- New outputs: `ibes_industry_coverage.csv` now flags industry-months with fewer
+  than 5 eligible firms; `signal_coverage_by_month.csv`,
+  `signal_coverage_by_horizon.csv`, `mom_rev_xs_corr_by_month.csv`, and
+  `results/figures/mom_rev_xs_corr.png`.
+- Key numbers (link rates by year, carried rows, coverage): TBD after rerunning
+  `python -m src.clean` and `python -m src.signals`.

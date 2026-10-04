@@ -187,6 +187,12 @@ project/
   this limitation in the report's data section.
 - Industry **returns** always come from Ken French's 49 industry portfolios, which are
   updated monthly, so the return side has no gap.
+- **Team decision (2026-10):** `wrdsapps.ibcrsphist` updates annually and has no links
+  valid in 2026, so primary REV and REV_ALT are missing from January 2026 on. Keep them
+  missing: never zero-fill them or substitute sensitivity values. MOM continues through
+  the last Ken French month. Any 2026 revision results built with a different matching
+  or price source (e.g., CUSIP links, `ibes.actpsum_epsus` prices) are an exploratory
+  sensitivity only, reported separately and labeled with their source.
 
 ### Output
 - `data/interim/ibes_crsp_monthly.parquet`: one row per (permno, month) with
@@ -335,7 +341,10 @@ All signals are formed at the end of month `t`, cross-sectionally across the 49 
 ### 10.1 Required horizon splits (report all three, even if results are bad)
 - Full sample (first signal month to latest)
 - Post-2010 (2010-01 onward)
-- Most recent 18 months
+- Most recent 18 months (the last 18 signal months; with data through August 2026 this
+  is March 2025–August 2026). Do not shift the window to where coverage is complete;
+  report how many months each signal actually covers and can be evaluated (signal and
+  next-month return both present) in each window.
 
 ### 10.2 Parameter grid (blended strategy unless noted)
 | Dimension | Values |

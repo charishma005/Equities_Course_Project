@@ -61,6 +61,12 @@ MIN_ANALYSTS = 3
 REV_ALT_LAG_MONTHS = 3
 REV_ALT_WINSOR = (0.01, 0.99)
 Z_WINSOR = 3.0
+# No sample cutoff. CRSP and the I/B/E/S-CRSP link end in December 2025, so
+# REV and REV_ALT are missing from January 2026 on and stay missing (never
+# zero-filled or replaced by sensitivity values). MOM runs through the last
+# Ken French month. The recent window stays the last RECENT_MONTHS signal
+# months; report how many months each signal actually covers in it.
+ROLLING_CORR_MONTHS = 12
 
 # --------------------------------------------------------------------------
 # Phase 4: IC and blending

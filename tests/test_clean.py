@@ -11,7 +11,21 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.clean import link_ibes, prepare_crsp  # noqa: E402
+from src.clean import industry_coverage, link_ibes, prepare_crsp  # noqa: E402
+
+
+def test_industry_coverage_flags_thin_industries():
+    panel = pd.DataFrame({
+        "month": [pd.Timestamp("2020-01-31")] * 7,
+        "industry": [1] * 6 + [2],
+        "permno": [1, 2, 3, 4, 5, 6, 7],
+        "numest": [3, 3, 3, 3, 3, 2, 5],      # permno 6 has too few analysts
+        "mktcap": [10.0] * 7,
+    })
+    cov = industry_coverage(panel).set_index("industry")
+    assert cov.loc[1, "linked_firms"] == 6 and cov.loc[1, "eligible_firms"] == 5
+    assert not cov.loc[1, "below_min_firms"]
+    assert cov.loc[2, "below_min_firms"]
 
 
 def test_prepare_crsp_uses_historical_name_and_combines_delisting_return():
@@ -84,6 +98,28 @@ def test_link_rejects_crsp_characteristics_older_than_carry_limit():
     })
     stock = pd.DataFrame({
         "permno": [1], "date": ["1990-01-31"], "prc": [10], "mktcap": [1000], "industry": [1],
+    })
+
+    linked, _ = link_ibes(ibes, links, stock, max_carry_months=12)
+
+    assert linked.empty
+
+
+def test_link_does_not_carry_within_crsp_coverage():
+    # CRSP runs to March 1990 (permno 2), but permno 1 has no February row,
+    # e.g. because it left the eligible universe. Its February snapshot must
+    # be dropped, not filled with January's market cap.
+    ibes = pd.DataFrame({
+        "ticker": ["AAA"], "statpers": ["1990-02-15"], "numest": [5],
+        "numup": [2], "numdown": [1], "meanest": [1.0], "fpedats": ["1990-12-31"],
+    })
+    links = pd.DataFrame({
+        "ticker": ["AAA"], "permno": [1], "sdate": ["1990-01-01"],
+        "edate": [None], "score": [1],
+    })
+    stock = pd.DataFrame({
+        "permno": [1, 2], "date": ["1990-01-31", "1990-03-31"], "prc": [10, 5],
+        "mktcap": [1000, 500], "industry": [1, 2],
     })
 
     linked, _ = link_ibes(ibes, links, stock, max_carry_months=12)

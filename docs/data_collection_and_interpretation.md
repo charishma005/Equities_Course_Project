@@ -18,8 +18,8 @@ The data flow is:
 3. Build industry signals and their next-month return outcomes in
    `src/signals.py`; save `data/processed/signals.parquet`.
 
-The sample notebook at `notebooks/data_samples.ipynb` reads and displays these
-files. It is for inspection; it does not create the signal table.
+Exploration notebooks, if any, belong in `notebooks/`; they only inspect these
+files and never create the signal table.
 
 ### Commands
 
@@ -81,16 +81,6 @@ in the units published by FRED and are not lagged at pull time. Apply the
 configured lag when using them in a model. Do not treat the partial October
 2026 FRED value as a completed monthly observation.
 
-### Other files currently present in `data/raw/`
-
-The repository also contains `ff3_factors_monthly.csv`,
-`ff49_industry_monthly.csv`, `macro_monthly.csv`, and
-`emissions_ff_industry.csv`. These are supporting files already present in the
-workspace; they are not produced by `pull_wrds.py` or `pull_public.py`, and the
-current signal builder does not read them. `macro_monthly.csv` has a long date
-index beginning in 1854 and substantial early missingness. Validate source,
-units, and coverage before using these files in an extension.
-
 ## 3. What the Samples Represent
 
 | Table | Granularity | Current size and date coverage |
@@ -143,9 +133,10 @@ the price also changed. These fields measure different things.
 - Join ticker to PERMNO only when the link is valid on the actual `statpers`
   date and its score is at most 2; among valid candidates prefer the lower
   score.
-- Backward-as-of join CRSP characteristics by PERMNO and month. A prior CRSP
-  market cap and SIC/industry may be carried for at most 12 months and are
-  flagged. The price itself is **not** carried: `prc` is missing when the
+- Backward-as-of join CRSP characteristics by PERMNO and month. Inside CRSP
+  coverage the CRSP row must be from the same month. Only for months after
+  CRSP ends may a prior market cap and SIC/industry be carried, for at most 12
+  months, and those rows are flagged. The price itself is **not** carried: `prc` is missing when the
   linked CRSP observation is from an earlier month. `crsp_date` and
   `price_age_months` expose the match date and age.
 - The output is deduplicated to one record per PERMNO and month.
@@ -203,7 +194,7 @@ Each row is one industry at the end of `month`.
 |---|---|---|
 | `month` | Month-end signal date `t` | Information is aligned to the end of this month. |
 | `industry` | Numeric Fama-French 49 industry ID | Values 1–49; 49 is Other. |
-| `mom` | `product(1 + R[i,t-k]) - 1` for `k=2,...,12` | Raw 12–1 industry momentum: compound the 11 returns from `t-12` through `t-2`, skipping `t-1`. |
+| `mom` | `product(1 + R[i,t-k]) - 1` for `k=1,...,11` | Raw 12–1 industry momentum: compound the 11 returns from `t-11` through `t-1`, skipping the most recent month `t`. |
 | `rev` | Market-cap-weighted mean of firm `(numup - numdown) / numest` | Main revision-breadth signal. A firm needs at least 3 estimates; an industry needs at least 5 contributing firms. The ratio is not assumed to be bounded by ±1 because revision counts need not partition current estimates. |
 | `rev_firms` | Distinct contributing PERMNO count for `rev` | If fewer than 5 firms contribute, `rev` is missing for that industry-month. |
 | `rev_alt` | Market-cap-weighted mean of firm `(meanest[t] - meanest[t-3]) / abs(prc[t])` | Alternative consensus-change signal. Both snapshots must have at least 3 estimates and the same `fpedats`; current price must be present and nonzero. Firm values are winsorized monthly at the 1st/99th percentiles before industry aggregation; at least 5 firms are required. |
@@ -241,12 +232,15 @@ signal is present.
 - **Coverage gap:** the CRSP pull ends in December 2025 while I/B/E/S summaries
   reach August 2026. The link file produces no linked 2026 firm-months. The
   2026 signal rows therefore have missing `rev` and `rev_alt`; do not read them
-  as zero or use them to evaluate those revision signals.
+  as zero or use them to evaluate those revision signals. Any 2026 revision
+  values built from another matching or price source (CUSIP links, I/B/E/S
+  `actpsum` prices) are an exploratory sensitivity, reported separately and
+  labeled with their source, never merged into the primary panel.
 - **No following-month return yet:** Ken French industry returns end in August
   2026, so August signal rows do not have September `next_return` values.
-- **Carried characteristics:** 5,234 linked rows have `crsp_carried=True`;
-  their price is not carried. For a robustness check, compare results with and
-  without carried market-cap/industry observations.
+- **Carried characteristics:** CRSP market cap and industry are carried forward
+  only for months after CRSP ends (at most 12 months), with price blanked. Within
+  CRSP coverage, a firm-month without a CRSP row is dropped rather than filled.
 - **I/B/E/S counts:** the pull contains records where `numup + numdown >
   numest`. WRDS labels these fields “Number Up” and “Number Down” but does not
   establish that they are mutually exclusive parts of `numest`; do not filter
