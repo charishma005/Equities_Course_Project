@@ -130,3 +130,29 @@ prices. The linked panel includes `crsp_date`, `price_age_months`, and a blank
   high-confidence recent evidence.
 - Primary 2026 REV remains missing. The CUSIP/ACTPSUM sensitivity remains a
   separate file and is not included in these primary ICs or weights.
+
+### Phase 4 checkpoint: REV-orthogonal IC is near zero (CLAUDE.md 12.4)
+
+Spearman IC, signal month `t` vs. industry return `t+1`. Newey-West t-stats
+use 6 lags. `rev_sample` = the 492 months with primary REV (Jan 1985–Dec 2025),
+so MOM and REV are compared over the same months.
+
+| Signal | rev_sample mean IC | NW t | post-2010 mean IC | NW t |
+|---|---:|---:|---:|---:|
+| MOM | 0.047 | 3.96 | 0.035 | 2.22 |
+| REV | 0.010 | 1.06 | -0.000 | -0.01 |
+| REV_ALT | 0.012 | 1.36 | 0.009 | 0.68 |
+| REV orthogonal to MOM | -0.000 | -0.05 | -0.007 | -0.50 |
+| Blend | 0.040 | 3.17 | 0.036 | 2.49 |
+
+- **Flag:** once momentum is removed, REV has no predictive power for
+  next-month industry returns, in the full REV sample or post-2010. This is
+  early evidence against the thesis that revisions carry information beyond
+  momentum. The blend's REV weight falls from about 0.35 (1990) to about
+  -0.12 (2025), so the blended signal is essentially momentum.
+- The rejection criterion is about factor-adjusted alpha net of costs, so
+  the project continues to Phases 5–7 as planned and reports the result
+  either way (CLAUDE.md 0, 13). The thesis is unchanged.
+- The full-window MOM IC (t = 8.5) starts in 1927; compare MOM with REV only
+  over `rev_sample`.
+- Recent 18 months: 10 evaluable REV months; descriptive only.

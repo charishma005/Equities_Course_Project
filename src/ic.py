@@ -159,20 +159,44 @@ def _mean_tstat(values: pd.Series) -> float:
     return float(values.mean() / standard_error) if standard_error > 0 else np.nan
 
 
+def _mean_tstat_nw(values: pd.Series, lags: int = config.NW_LAGS) -> float:
+    """t-stat of the mean with Newey-West (HAC) standard errors.
+
+    Monthly ICs can be autocorrelated, which the plain t-stat ignores.
+    Returns NaN with fewer than lags + 2 observations.
+    """
+    import statsmodels.api as sm
+
+    values = values.dropna().to_numpy(dtype=float)
+    if len(values) < lags + 2 or np.std(values) == 0:
+        return np.nan
+    fit = sm.OLS(values, np.ones(len(values))).fit(
+        cov_type="HAC", cov_kwds={"maxlags": lags})
+    return float(fit.tvalues[0])
+
+
 def summarize_ic_by_horizon(
     panel: pd.DataFrame,
     monthly_ic: pd.DataFrame,
     recent_months: int = config.RECENT_MONTHS,
 ) -> pd.DataFrame:
-    """Summarize IC magnitude, significance, and actual coverage by planned window."""
+    """Summarize IC magnitude, significance, and actual coverage by planned window.
+
+    Windows: full (first to last panel month), rev_sample (first to last month
+    with any REV z-score, so MOM and REV are compared over the same months),
+    post_2010, and the last `recent_months` signal months (not shifted).
+    t-stats are reported both plain and Newey-West (config.NW_LAGS lags).
+    """
     panel = panel.copy()
     panel["month"] = to_month_end(panel["month"])
     monthly_ic = monthly_ic.copy()
     monthly_ic["month"] = to_month_end(monthly_ic["month"])
     first, last = panel["month"].min(), panel["month"].max()
+    rev_months = panel.loc[panel["rev_z"].notna(), "month"]
     recent_start = last - pd.offsets.MonthEnd(recent_months - 1)
     windows = {
         "full": (first, last),
+        "rev_sample": (rev_months.min(), rev_months.max()),
         "post_2010": (pd.Timestamp(config.POST_SPLIT), last),
         f"recent_{recent_months}m": (recent_start, last),
     }
@@ -199,12 +223,14 @@ def summarize_ic_by_horizon(
                 "pearson_mean": pearson.mean(),
                 "pearson_std": pearson.std(ddof=1),
                 "pearson_tstat": _mean_tstat(pearson),
+                "pearson_tstat_nw": _mean_tstat_nw(pearson),
                 "pearson_ir": pearson.mean() / pearson.std(ddof=1)
                 if pearson.std(ddof=1) > 0 else np.nan,
                 "pearson_positive_pct": 100 * pearson.gt(0).mean(),
                 "spearman_mean": spearman.mean(),
                 "spearman_std": spearman.std(ddof=1),
                 "spearman_tstat": _mean_tstat(spearman),
+                "spearman_tstat_nw": _mean_tstat_nw(spearman),
                 "spearman_ir": spearman.mean() / spearman.std(ddof=1)
                 if spearman.std(ddof=1) > 0 else np.nan,
                 "spearman_positive_pct": 100 * spearman.gt(0).mean(),
@@ -216,6 +242,7 @@ def _plot_rolling_ic(monthly_ic: pd.DataFrame) -> Path:
     from src import plots
 
     figure, axis = plots.new_figure()
+    plotted = []
     for signal, color, label in (("mom", plots.SERIES[0], "MOM"),
                                  ("rev", plots.SERIES[1], "REV")):
         series = (monthly_ic.loc[monthly_ic["signal"].eq(signal)]
@@ -223,9 +250,13 @@ def _plot_rolling_ic(monthly_ic: pd.DataFrame) -> Path:
         rolling = series.rolling(config.ROLLING_IC_MONTHS,
                                  min_periods=config.ROLLING_IC_MONTHS).mean()
         axis.plot(rolling.index, rolling, color=color, linewidth=1.8, label=label)
+        plotted.append(rolling.dropna())
+    axis.axhline(0, color=plots.BASELINE, linewidth=1.0)
+    span = pd.concat(plotted)
     return plots.finish(
         figure, axis,
-        title=f"Rolling {config.ROLLING_IC_MONTHS}-month Spearman IC: MOM and REV",
+        title=f"Rolling {config.ROLLING_IC_MONTHS}-month Spearman IC: MOM and REV, "
+              f"{span.index.min():%b %Y}–{span.index.max():%b %Y}",
         xlabel="Signal month (month-end)",
         ylabel="Mean monthly Spearman IC (unitless)",
         path=config.FIGURES / "rolling_ic_mom_rev.png",
@@ -236,13 +267,16 @@ def _plot_blend_weights(weights: pd.DataFrame) -> Path:
     from src import plots
 
     figure, axis = plots.new_figure()
+    shown = weights.dropna(subset=["mom_weight"])
     axis.plot(weights["month"], weights["mom_weight"],
               color=plots.SERIES[0], linewidth=1.8, label="MOM weight")
     axis.plot(weights["month"], weights["rev_weight"],
               color=plots.SERIES[1], linewidth=1.8, label="REV weight")
     axis.axhline(0, color=plots.BASELINE, linewidth=1.0)
     return plots.finish(
-        figure, axis, "Expanding-window blend weights",
+        figure, axis,
+        f"Expanding-window blend weights, {shown['month'].min():%b %Y}–"
+        f"{shown['month'].max():%b %Y}",
         "Signal month (month-end)", "Weight (unitless)",
         config.FIGURES / "blend_weights.png",
     )

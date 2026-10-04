@@ -128,3 +128,26 @@ def test_blend_requires_both_primary_signals():
     row = blended.loc[blended["month"].eq(months[2]) & blended["industry"].eq(1)].iloc[0]
 
     assert pd.isna(row["blend_z"])
+
+
+def test_rev_sample_window_spans_only_months_with_rev_and_reports_nw_tstat():
+    months = pd.date_range("2000-01-31", periods=30, freq="ME")
+    rng = np.random.default_rng(0)
+    rows = []
+    for month_index, month in enumerate(months):
+        has_rev = 5 <= month_index < 25
+        for industry in range(1, 6):
+            rows.append({
+                "month": month, "industry": industry,
+                "mom_z": rng.normal(), "rev_z": rng.normal() if has_rev else np.nan,
+                "rev_alt_z": np.nan, "rev_orth_z": np.nan, "blend_z": np.nan,
+                "next_return": rng.normal(0, 0.05),
+            })
+    panel = pd.DataFrame(rows)
+    summary = summarize_ic_by_horizon(panel, monthly_information_coefficients(panel))
+    rev_sample = summary.loc[summary["window"].eq("rev_sample")].set_index("signal")
+
+    assert rev_sample.loc["mom", "window_start"] == months[5]
+    assert rev_sample.loc["mom", "window_end"] == months[24]
+    assert rev_sample.loc["mom", "ic_months"] == 20
+    assert np.isfinite(rev_sample.loc["mom", "spearman_tstat_nw"])
