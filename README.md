@@ -25,8 +25,9 @@ prompts for your password and offers to create `~/.pgpass`. Optionally set
 | 1. Data pulls (WRDS) | `python -m src.pull_wrds` | `data/raw/*.parquet` (not in git) |
 | 1. ...or import web-query downloads | `python -m src.import_wrds_files ~/Downloads/<file> ...` | same files as above |
 | 1. Data pulls (public) | `python -m src.pull_public` | `data/raw/kf_*.parquet`, `fred_macro.parquet` |
+| Optional 2026 revision sensitivity | `python -m src.pull_2026_sensitivity && python -m src.sensitivity_2026` | separately flagged sensitivity parquet and coverage CSV |
 | 2. Clean and link | `python -m src.clean` | `data/interim/*.parquet`, coverage tables |
-| 3. Build signals | `python -m src.signals` | `data/processed/signals.parquet`, signal summary |
+| 3. Build signals | `python -m src.signals` | signals, monthly coverage, correlation figure |
 | 4–8. IC, risk, portfolio, attribution, robustness | not yet implemented | |
 
 Tests: `python -m pytest -q tests`
@@ -76,3 +77,34 @@ CRSP ends 8 months before I/B/E/S statpers. The source did not provide data
 through October 2026; do not interpret carried CRSP characteristics as current
 prices. The linked panel includes `crsp_date`, `price_age_months`, and a blank
 `prc` whenever the attached CRSP observation is carried forward.
+
+### Phases 2–3: cleaning and signals (rebuilt 2026-10-04)
+
+- The cleaned CRSP panel has 2,861,589 stock-months through December 2025. The
+  I/B/E/S-linked panel has 1,851,249 firm-months through December 2025. CRSP
+  characteristics are no longer carried across missing security-months while
+  the overall CRSP panel still covers that period; zero rows are carried in
+  the current output.
+- I/B/E/S ticker-month link rate is 87.7% in 2025 and 0% in 2026. The full
+  coverage grid has 24,500 month-industry cells; 1,037 have fewer than five
+  linked firms. All 392 cells from January–August 2026 have zero linked firms.
+  Review `ibes_link_rate_by_year.csv` and `ibes_industry_coverage.csv` with the
+  team at the Phase 2 checkpoint.
+- The MOM window now compounds industry returns from `t-11` through `t-1`.
+  The signal panel has 58,898 industry-months through August 2026. MOM is
+  available for all 392 2026 rows; REV and REV_ALT are missing for all of them.
+  `next_return` is present for 343 rows (January–July 2026); August's
+  following-month return is not yet available.
+- `signal_coverage_by_month.csv` records monthly available/missing counts.
+  `results/figures/mom_rev_correlation.png` contains 492 monthly MOM–REV
+  cross-sectional correlations from January 1985 through December 2025.
+- An **optional sensitivity only** is stored separately in
+  `data/processed/signals_2026_sensitivity.parquet`; it uses exact CUSIP matches
+  to one PERMNO at the December 2025 CRSP names reference date, ACTPSUM USD
+  prices/shares with a recent pricing date, and December 2025 SIC/industry
+  assignments. It has 392 industry-month rows: 373 with REV and 309 with
+  REV_ALT. It does not replace or fill the primary `signals.parquet` values.
+- **Team decision still pending:** whether `ibcrsphist` links whose `edate` is
+  the table's last date may be treated as active beyond that date. No end-date
+  extension has been applied. The separate CUSIP sensitivity is not proof that
+  all such ticker links remain valid.

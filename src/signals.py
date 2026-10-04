@@ -18,7 +18,7 @@ def momentum_signal(returns: pd.DataFrame, lookback: int = config.MOM_LOOKBACK,
     """Compute 12-1 style compounded momentum by industry.
 
     Input is a month-end wide industry-return panel. For lookback 12 and skip
-    1, the signal at t compounds returns t-12 through t-2, excluding t-1.
+    1, the signal at t compounds returns t-11 through t-1, excluding month t.
     Output has month, industry, and mom columns.
     """
     if lookback <= skip + 1:
@@ -28,7 +28,7 @@ def momentum_signal(returns: pd.DataFrame, lookback: int = config.MOM_LOOKBACK,
     frame = frame.sort_values("date").set_index("date")
     industries = [col for col in frame.columns if col != "date"]
     period_count = lookback - skip
-    lag = skip + 1
+    lag = skip
     compounded = (frame[industries].add(1).shift(lag)
                   .rolling(period_count, min_periods=period_count)
                   .apply(np.prod, raw=True).sub(1))
@@ -162,6 +162,19 @@ def build_signals(ibes: pd.DataFrame, industry_returns: pd.DataFrame,
     return attach_next_month_returns(panel, returns_long)
 
 
+def signal_coverage(signal: pd.DataFrame) -> pd.DataFrame:
+    """Report available and missing industries for each signal month."""
+    coverage = (signal.groupby("month", as_index=False)
+                .agg(industries=("industry", "nunique"),
+                     mom_available=("mom", "count"),
+                     rev_available=("rev", "count"),
+                     rev_alt_available=("rev_alt", "count"),
+                     next_return_available=("next_return", "count")))
+    for name in ("mom", "rev", "rev_alt", "next_return"):
+        coverage[f"{name}_missing"] = coverage["industries"] - coverage[f"{name}_available"]
+    return coverage
+
+
 def main() -> None:
     """Build and save the processed signal panel from Phase 1 and Phase 2 outputs."""
     signal = build_signals(
@@ -173,6 +186,28 @@ def main() -> None:
     config.TABLES.mkdir(parents=True, exist_ok=True)
     stats = signal[["mom_z", "rev_z", "rev_alt_z"]].describe().T
     stats.to_csv(config.TABLES / "signal_summary.csv", index_label="signal")
+    signal_coverage(signal).to_csv(
+        config.TABLES / "signal_coverage_by_month.csv", index=False)
+
+    correlation_rows = []
+    for month, group in signal.groupby("month", sort=True):
+        paired = group[["mom", "rev"]].dropna()
+        if len(paired) >= 2:
+            correlation_rows.append((month, paired["mom"].corr(paired["rev"])))
+    if correlation_rows:
+        correlation = pd.DataFrame(correlation_rows, columns=["month", "correlation"])
+        import matplotlib.pyplot as plt
+
+        config.FIGURES.mkdir(parents=True, exist_ok=True)
+        figure, axis = plt.subplots(figsize=(10, 5))
+        axis.plot(correlation["month"], correlation["correlation"])
+        axis.axhline(0, color="black", linewidth=0.8, linestyle="--")
+        axis.set_title("Cross-sectional MOM–REV correlation")
+        axis.set_xlabel("Month")
+        axis.set_ylabel("Pearson correlation across available industries")
+        figure.tight_layout()
+        figure.savefig(config.FIGURES / "mom_rev_correlation.png", dpi=config.FIG_DPI)
+        plt.close(figure)
     print(f"signals: {len(signal):,} industry-months through {signal['month'].max():%Y-%m}")
 
 

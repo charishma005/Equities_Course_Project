@@ -181,10 +181,11 @@ project/
 - Attach end-of-month-`t` market cap and industry from CRSP.
 
 ### 4.4 CRSP coverage gap
-- If CRSP ends before the I/B/E/S data, for the uncovered months carry forward the last
-  available market cap and SIC per permno (max 12 months), and flag those months. Do not
-  carry forward `prc`; set it missing and expose `crsp_date` and `price_age_months`. State
-  this limitation in the report's data section.
+- Only for months after the dataset-wide CRSP end date, carry the last available market
+  cap and SIC per PERMNO (max 12 months), and flag those months. Within CRSP's covered
+  period, do not carry across a security-specific missing month. Do not carry forward
+  `prc`; set it missing and expose `crsp_date` and `price_age_months`. State this
+  limitation in the report's data section.
 - Industry **returns** always come from Ken French's 49 industry portfolios, which are
   updated monthly, so the return side has no gap.
 
@@ -203,8 +204,8 @@ project/
 All signals are formed at the end of month `t`, cross-sectionally across the 49 industries.
 
 ### 5.1 Industry momentum (MOM)
-- Cumulative return over months `t-11` through `t-1` (12-1 momentum; skip the most recent
-  month), from Ken French value-weighted industry returns.
+- Cumulative return over months `t-11` through `t-1`, excluding the signal month `t`,
+  from Ken French value-weighted industry returns.
 - Parameters in config: `MOM_LOOKBACK = 12`, `MOM_SKIP = 1`.
 
 ### 5.2 Industry analyst revisions (REV) — main specification
@@ -223,14 +224,16 @@ All signals are formed at the end of month `t`, cross-sectionally across the 49 
 - Each month, z-score each signal across available industries, then winsorize at ±3.
 - Preserve missing industry values as missing; do not interpret unavailable data as neutral.
 - If all values for a signal are missing in a month, leave all standardized values missing.
-- Record monthly coverage and missing counts.
+- Record monthly coverage and missing counts in `signal_coverage_by_month.csv`.
 
 ### Output
 - `data/processed/signals.parquet`: (month, industry, mom_z, rev_z, rev_alt_z).
-- Figure: time series of the cross-sectional correlation between MOM and REV.
+- Figure: `results/figures/mom_rev_correlation.png`, monthly cross-sectional Pearson
+  correlation between MOM and REV across available industries.
 
 ### Acceptance checks
-- `tests/test_timing.py` passes: signals at `t` are merged with returns at `t+1`.
+- `tests/test_timing.py` passes: momentum uses returns through `t-1`, and signals at `t`
+  are aligned with returns at `t+1`.
 - Summary stats of each signal (mean, std, coverage) saved as a table.
 
 ---

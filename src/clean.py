@@ -151,6 +151,7 @@ def link_ibes(ibes: pd.DataFrame, links: pd.DataFrame,
     chars = stock_monthly.copy()
     chars["permno"] = _numeric_id(chars["permno"])
     chars["date"] = to_month_end(chars["date"])
+    crsp_end = chars["date"].max()
     chars = chars.sort_values(["date", "permno"])
     candidates["permno"] = _numeric_id(candidates["permno"])
     candidates = pd.merge_asof(
@@ -165,8 +166,12 @@ def link_ibes(ibes: pd.DataFrame, links: pd.DataFrame,
         candidates.loc[has_crsp, "month"].dt.to_period("M").astype("int64") -
         candidates.loc[has_crsp, "date"].dt.to_period("M").astype("int64")
     )
-    candidates["crsp_carried"] = month_gap.gt(0).fillna(False)
-    candidates = candidates.loc[month_gap.le(max_carry_months).fillna(False)].copy()
+    after_crsp_end = candidates["month"].gt(crsp_end)
+    candidates["crsp_carried"] = after_crsp_end & month_gap.gt(0).fillna(False)
+    exact_month = month_gap.eq(0).fillna(False)
+    within_carry_limit = month_gap.le(max_carry_months).fillna(False)
+    keep = exact_month | (candidates["crsp_carried"] & within_carry_limit)
+    candidates = candidates.loc[keep].copy()
     candidates["crsp_date"] = candidates["date"]
     candidates["price_age_months"] = month_gap.loc[candidates.index].astype("Int64")
     candidates.loc[candidates["crsp_carried"], "prc"] = np.nan
@@ -179,6 +184,32 @@ def link_ibes(ibes: pd.DataFrame, links: pd.DataFrame,
     return candidates[output_cols].reset_index(drop=True), rates
 
 
+def industry_coverage(ibes_panel: pd.DataFrame, estimate_months: pd.Series,
+                      min_firms: int = config.MIN_FIRMS_PER_INDUSTRY) -> pd.DataFrame:
+    """Count linked firms for every estimate month and 49-industry combination.
+
+    Industries with no linked firms are retained with zero coverage and flagged.
+    """
+    months = (to_month_end(pd.Series(estimate_months)).dropna()
+              .drop_duplicates().sort_values())
+    grid = pd.MultiIndex.from_product(
+        [months.tolist(), range(1, config.OTHER_INDUSTRY_49 + 1)],
+        names=["month", "industry"],
+    ).to_frame(index=False)
+    panel = ibes_panel.copy()
+    if not panel.empty:
+        panel["month"] = to_month_end(panel["month"])
+    if panel.empty:
+        counts = pd.DataFrame(columns=["month", "industry", "firms"])
+    else:
+        counts = (panel.groupby(["month", "industry"], as_index=False)
+                  .agg(firms=("permno", "nunique")))
+    coverage = grid.merge(counts, on=["month", "industry"], how="left")
+    coverage["firms"] = coverage["firms"].fillna(0).astype("int64")
+    coverage["low_coverage"] = coverage["firms"] < min_firms
+    return coverage
+
+
 def main() -> None:
     """Run Phase 2 from raw parquet inputs and save interim coverage tables."""
     raw = config.DATA_RAW
@@ -189,15 +220,16 @@ def main() -> None:
     if missing:
         raise FileNotFoundError("Missing raw inputs: " + ", ".join(str(p) for p in missing))
     read = lambda name: pd.read_parquet(raw / f"{name}.parquet")
+    ibes_source = read("ibes_statsum")
     stocks = prepare_crsp(read("crsp_msf"), read("crsp_msenames"),
                           read("kf_sic49"), returns_include_delist=True)
-    ibes_panel, link_rates = link_ibes(read("ibes_statsum"), read("ibes_crsp_link"), stocks)
+    ibes_panel, link_rates = link_ibes(ibes_source, read("ibes_crsp_link"), stocks)
     save_parquet(stocks, config.DATA_INTERIM / "crsp_monthly.parquet")
     save_parquet(ibes_panel, config.DATA_INTERIM / "ibes_crsp_monthly.parquet")
     config.TABLES.mkdir(parents=True, exist_ok=True)
     link_rates.to_csv(config.TABLES / "ibes_link_rate_by_year.csv", index=False)
-    coverage = (ibes_panel.groupby(["month", "industry"], as_index=False)
-                .agg(firms=("permno", "nunique")))
+    estimate_months = to_month_end(pd.to_datetime(ibes_source["statpers"], errors="coerce"))
+    coverage = industry_coverage(ibes_panel, estimate_months)
     coverage.to_csv(config.TABLES / "ibes_industry_coverage.csv", index=False)
     print(link_rates.to_string(index=False))
     print(f"CRSP rows: {len(stocks):,}; linked I/B/E/S firm-months: {len(ibes_panel):,}")

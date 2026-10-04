@@ -1,0 +1,3 @@
+file,rows,date_col,min_date,max_date
+ibes_actpsum_2026.parquet,37809,statpers,2026-01-15,2026-08-20
+crsp_cusip_reference.parquet,4982,namedt,1968-01-02,2025-12-31

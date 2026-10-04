@@ -32,7 +32,7 @@ def test_zscore_preserves_missing_values_but_keeps_real_zeroes():
     assert _zscore(pd.Series([2.0, 2.0, np.nan]), winsor=3.0).tolist()[:2] == [0.0, 0.0]
 
 
-def test_momentum_uses_twelve_to_two_and_skips_recent_month():
+def test_momentum_uses_t_minus_11_through_t_minus_1():
     returns = pd.DataFrame({
         "date": pd.date_range("2020-01-31", periods=13, freq="ME"),
         "Industry": [0.01] * 11 + [0.50, 0.90],
@@ -41,7 +41,7 @@ def test_momentum_uses_twelve_to_two_and_skips_recent_month():
     signal = momentum_signal(returns)
     january_2021 = signal.loc[signal["month"].eq(pd.Timestamp("2021-01-31")), "mom"].iloc[0]
 
-    assert january_2021 == pytest.approx((1.01 ** 11) - 1)
+    assert january_2021 == pytest.approx((1.01 ** 10) * 1.50 - 1)
 
 
 def test_next_return_is_exactly_the_following_calendar_month():
