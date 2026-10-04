@@ -72,15 +72,19 @@ def align(strategy_rows: pd.DataFrame, factors: pd.DataFrame) -> pd.DataFrame:
     realized return is absent from the factor dates (CLAUDE.md 9 acceptance:
     no off-by-one and no silently dropped months).
     """
-    rows = strategy_rows.copy()
+    # Renumber rows: callers pass filtered subsets, and merge() renumbers its
+    # output, so a label-based mask from the input would not line up.
+    rows = strategy_rows.reset_index(drop=True).copy()
     rows["return_month"] = to_month_end(rows["return_month"])
-    realized = rows["gross_return"].notna()
+    realized = rows["gross_return"].notna().to_numpy()
     absent = set(rows.loc[realized, "return_month"]) - set(factors["date"])
     if absent:
         raise ValueError(f"factor data missing for return months: {sorted(absent)[:5]}...")
     merged = rows.merge(factors, left_on="return_month", right_on="date",
                         how="left", validate="many_to_one")
-    assert (merged.loc[realized, "date"] == merged.loc[realized, "return_month"]).all()
+    matched = merged["date"].to_numpy()[realized] == merged["return_month"].to_numpy()[realized]
+    if not matched.all():
+        raise ValueError("strategy and factor months are misaligned")
     return merged
 
 

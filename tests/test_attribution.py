@@ -88,3 +88,15 @@ def test_short_windows_report_nan_instead_of_failing():
     out = attribution.nw_regression(res["net_return_20bps"],
                                     attribution.align(res, f)[attribution.SPECS["ff5_umd"]])
     assert out["n"] == 5 and np.isnan(out["alpha_t"])
+
+
+def test_align_accepts_filtered_rows_with_non_default_index():
+    # Regression: robustness passes subsets (e.g. one strategy's rows) whose
+    # index does not start at 0; align used to crash under pandas 2.2.
+    f = _factors()
+    res = _results(f, strategies=("a", "b"))
+    subset = res.loc[res["strategy"].eq("b")].iloc[10:50]
+    assert subset.index[0] != 0
+    merged = attribution.align(subset, f)
+    assert len(merged) == 40
+    assert (merged["date"] == merged["return_month"]).all()

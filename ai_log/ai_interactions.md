@@ -235,5 +235,17 @@ net Sharpe above 0.38; the momentum lookback drives the results, and the
 consensus-change REV makes the blend worse. The minimum-analysts and
 30-industry rows and all factor alphas need the team's raw data.
 
+**Bug found when the team ran it (2026-10-04):** `attribution.align`, written
+by the AI in Phase 7, compared two columns using a row mask built before a
+merge that renumbers rows. When the input was a filtered subset (the
+rolling-alpha step and `--alphas-only`), the labels no longer lined up and
+pandas 2.2 (the teammate's version) crashed with an `AssertionError`, so the
+rolling 36-month alpha was never written. The AI's tests only used freshly
+numbered rows, and its own environment ran pandas 3. Fixed by renumbering
+rows and comparing plain arrays; a regression test now passes a filtered
+subset, and the fix was checked under pandas 2.2.3 / Python 3.9. The bug
+could only crash, never misalign silently, so the committed grid alphas
+are unaffected.
+
 **Critical evaluation (to be written by the team):**
 
