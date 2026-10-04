@@ -82,6 +82,10 @@ IC_MIN_INDUSTRIES = 3
 # --------------------------------------------------------------------------
 COV_HALFLIFE_MONTHS = 30
 COV_MIN_MONTHS = 60
+# Team decision (2026-10-04): shrink the EWMA covariance toward its diagonal
+# before optimizing. Without it, realized active vol of the mean-variance
+# books was ~2x the 5% target. 0 = plan's original unshrunk model.
+COV_SHRINKAGE = 0.5
 ANNUALIZE = 12
 TARGET_ACTIVE_RISK = 0.05          # annualized
 POSITION_CAP_FRAC_GROSS = 0.10

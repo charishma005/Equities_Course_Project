@@ -291,6 +291,11 @@ All signals are formed at the end of month `t`, cross-sectionally across the 49 
   **30-month half-life**, estimated each month on data through month `t` only.
 - Minimum history: 60 months.
 - Annualize volatilities by `sqrt(12)`.
+- **Team decision (2026-10-04):** shrink the EWMA covariance 50% toward its diagonal
+  (`COV_SHRINKAGE = 0.5`) for optimization, λ calibration, and ex-ante risk. With the
+  unshrunk matrix, ex-ante risk hit 5% but realized active volatility of the
+  mean-variance books was about 10% with ~4x gross exposure. `omega` in 7.2 uses the
+  unshrunk EWMA. The unshrunk model (`COV_SHRINKAGE = 0`) remains a robustness case.
 
 ### 7.2 Alphas
 - Grinold-Kahn: `alpha_n = IC * omega_n * z_n`, where `IC` is the expanding-window

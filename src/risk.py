@@ -77,6 +77,19 @@ def ewma_covariances(returns: pd.DataFrame,
     return out
 
 
+def shrink_covariance(cov: np.ndarray,
+                      intensity: float = config.COV_SHRINKAGE) -> np.ndarray:
+    """Shrink a covariance toward its diagonal: (1-k) Sigma + k diag(Sigma).
+
+    Variances are unchanged; every covariance is scaled by (1 - k). This damps
+    the low-variance directions a 49x49 estimate understates, which a
+    mean-variance optimizer would otherwise lever (CLAUDE.md 7.1 team decision).
+    """
+    if not 0 <= intensity <= 1:
+        raise ValueError("shrinkage intensity must be in [0, 1]")
+    return (1 - intensity) * cov + intensity * np.diag(np.diag(cov))
+
+
 def residual_volatility(cov: np.ndarray, annualize: bool = True) -> np.ndarray:
     """Volatility of each industry's return minus the equal-weighted average.
 

@@ -186,3 +186,27 @@ def test_missing_signal_industries_get_no_position():
     holdings, diag = portfolio.build_holdings(panel, {"mom": "mom_z"}, ic_min_months=3)
     assert not holdings["industry"].eq(3).any()
     assert (diag["n_industries"] == 11).all()
+
+
+def test_shrinkage_keeps_variances_and_scales_covariances():
+    cov, _ = _cov_alpha()
+    shrunk = risk.shrink_covariance(cov, 0.5)
+    assert np.diag(shrunk) == pytest.approx(np.diag(cov))
+    off = ~np.eye(len(cov), dtype=bool)
+    assert shrunk[off] == pytest.approx(0.5 * cov[off])
+    assert risk.shrink_covariance(cov, 0.0) == pytest.approx(cov)
+    with pytest.raises(ValueError):
+        risk.shrink_covariance(cov, 1.5)
+
+
+def test_build_holdings_uses_shrunk_covariance_for_risk():
+    panel, months = _panel()
+    _, raw = portfolio.build_holdings(panel, {"mom": "mom_z"}, ic_min_months=3,
+                                      shrinkage=0.0)
+    _, shrunk = portfolio.build_holdings(panel, {"mom": "mom_z"}, ic_min_months=3,
+                                         shrinkage=0.5)
+    # both hit the target under their own risk model, but lambdas differ
+    assert shrunk["exante_active_risk_ann"].to_numpy() == pytest.approx(0.05, rel=1e-6)
+    mv_raw = raw.loc[raw["method"].eq("mv"), "lambda"].to_numpy()
+    mv_shr = shrunk.loc[shrunk["method"].eq("mv"), "lambda"].to_numpy()
+    assert not np.allclose(mv_raw, mv_shr)

@@ -14,6 +14,8 @@ Choices not fixed by the plan (recorded in README):
   Spearman IC over signal months before t, requiring ALPHA_IC_MIN_MONTHS.
   Because lambda is recalibrated to the risk target every month, only its
   sign affects the holdings; a negative IC means the signal is traded short.
+- Risk model: EWMA covariance shrunk toward its diagonal (config.COV_SHRINKAGE,
+  team decision) for optimization and risk; omega uses the raw EWMA.
 - The cap |h_n| <= 10% of gross exposure is scale-free but not convex, so it
   is solved as a fixed point: solve with an absolute cap c, set
   c = cap * gross, repeat until consistent.
@@ -143,6 +145,7 @@ def build_holdings(panel: pd.DataFrame,
                    halflife: float = config.COV_HALFLIFE_MONTHS,
                    target: float = config.TARGET_ACTIVE_RISK,
                    ic_min_months: int = config.ALPHA_IC_MIN_MONTHS,
+                   shrinkage: float = config.COV_SHRINKAGE,
                    ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Form monthly holdings for each strategy, mean-variance and diagonal.
 
@@ -151,6 +154,8 @@ def build_holdings(panel: pd.DataFrame,
     Holdings rows: month, strategy, method, industry, alpha, weight.
     Diagnostics include lambda, ex-ante risk, gross, cap check, and the
     realized active return of month t+1 (NaN when not yet observed).
+    The optimizer, risk calibration, and ex-ante risk use the EWMA covariance
+    shrunk toward its diagonal by `shrinkage`; omega uses the raw EWMA.
     """
     panel = panel.copy()
     panel["month"] = to_month_end(panel["month"])
@@ -172,7 +177,7 @@ def build_holdings(panel: pd.DataFrame,
             ic = ic_series.get(month, np.nan)
             if available.sum() < min_assets or not np.isfinite(ic) or ic == 0:
                 continue
-            cov_ann = covs[month] * config.ANNUALIZE
+            cov_ann = risk.shrink_covariance(covs[month], shrinkage) * config.ANNUALIZE
             omega = risk.residual_volatility(covs[month])[available]
             sub_cov = cov_ann[np.ix_(available, available)]
             alpha = grinold_kahn_alpha(z_all[available], ic, omega)

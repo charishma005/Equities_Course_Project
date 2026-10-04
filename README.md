@@ -29,7 +29,8 @@ prompts for your password and offers to create `~/.pgpass`. Optionally set
 | 3. Build signals | `python -m src.signals` | `data/processed/signals.parquet`, coverage tables, MOM–REV correlation figure |
 | 4. IC and blend | `python -m src.ic` | IC/horizon tables, orthogonal REV, expanding blend, figures |
 | 5. Risk model and holdings | `python -m src.portfolio` | `data/processed/holdings.parquet`, `portfolio_by_month.csv`, `portfolio_risk_summary.csv`, λ figure |
-| 6–8. Backtest, attribution, robustness | not yet implemented | |
+| 6. Backtest and costs | `python -m src.backtest` | `strategy_returns_by_month.csv`, `performance_by_window.csv`, cumulative-return and drawdown figures |
+| 7–8. Attribution, robustness | not yet implemented | |
 
 Tests: `python -m pytest -q tests`
 
@@ -158,7 +159,7 @@ so MOM and REV are compared over the same months.
   over `rev_sample`.
 - Recent 18 months: 10 evaluable REV months; descriptive only.
 
-### Phase 5: risk model and holdings (run 2026-10-04)
+### Phase 5: risk model and holdings (rerun 2026-10-04 with shrinkage)
 
 - `src/risk.py`: EWMA covariance of the 49 Ken French industry returns,
   30-month half-life, 60-month minimum, estimated each month from returns
@@ -166,6 +167,9 @@ so MOM and REV are compared over the same months.
   Returns are rebuilt from `next_return` in the committed signal panel. RF is
   not subtracted: it is common to all industries, so it drops out of risk for
   dollar-neutral books.
+- **Team decision:** the covariance is shrunk 50% toward its diagonal for
+  optimization, λ, and ex-ante risk (CLAUDE.md 7.1). Without shrinkage the
+  mean-variance books hit 5% ex-ante but realized 9–10% with ~4x gross.
 - `src/portfolio.py`: Grinold-Kahn alphas, mean-variance holdings with
   dollar neutrality and |h_n| <= 10% of gross (solved as a fixed point), the
   HW02 diagonal comparison, and λ set each month so ex-ante active risk is 5%.
@@ -177,23 +181,45 @@ so MOM and REV are compared over the same months.
 - Holdings start: MOM June 1974 (first full covariance), REV and REV
   orthogonal January 1990, blend January 1995.
 
-| Strategy | Method | Ex-ante risk | Realized active vol | Median λ | Mean gross |
-|---|---|---:|---:|---:|---:|
-| MOM | MV | 5.0% | 10.2% | 5.4 | 3.9x |
-| REV | MV | 5.0% | 9.2% | 2.1 | 4.5x |
-| REV orthogonal | MV | 5.0% | 9.3% | 0.63 | 4.5x |
-| Blend | MV | 5.0% | 9.2% | 3.3 | 3.3x |
-| MOM | Diagonal | 5.0% | 6.0% | 9.4 | 1.1x |
-| Blend | Diagonal | 5.0% | 6.3% | 5.7 | 1.1x |
+| Strategy (mean-variance) | Ex-ante risk | Realized active vol | Median λ | Mean gross |
+|---|---:|---:|---:|---:|
+| MOM | 5.0% | 6.2% | 3.8 | 1.2x |
+| REV | 5.0% | 4.8% | 1.2 | 1.5x |
+| REV orthogonal | 5.0% | 4.3% | 0.33 | 1.5x |
+| Blend | 5.0% | 6.6% | 2.3 | 1.2x |
 
-- **Flag (team decision needed):** ex-ante risk hits 5% every month, but
-  realized active volatility of the full mean-variance books is about twice
-  the target, with about 4x gross exposure. The optimizer is levering
-  directions the 49x49 EWMA covariance underestimates (a 30-month half-life
-  is about 86 months of effective data). A side test (not in the code,
-  1995–2025, MV): MOM realized vol 9.8% (plan), 8.6% (60-month half-life),
-  6.7% (50% shrinkage toward the diagonal, 1.25x gross); REV orthogonal 9.3%,
-  7.3%, 4.3%. Options: keep the plan's model and report the gap, add
-  covariance shrinkage, or use the diagonal book as primary.
-- REV orthogonal's λ falls toward 0.01 after 2023 because its expanding IC
-  is near zero: the optimizer scales up an almost-zero alpha to reach 5% risk.
+- Realized/target is 0.86–1.32. MOM and the blend run above target mainly
+  through momentum crashes (2009).
+- REV orthogonal's λ falls toward zero late in the sample because its
+  expanding IC is near zero: the optimizer scales up an almost-zero alpha to
+  reach 5% risk.
+
+### Phase 6: backtest, turnover, costs (run 2026-10-04)
+
+- `src/backtest.py`: gross return h(t)·r(t+1); turnover against prior
+  weights drifted by month-t returns; cost charged on the t+1 return; net
+  returns at 10/20/30 bp one-way. Windows by formation month: own full
+  history, `common` (Jan 1995–Dec 2025, all four strategies trade), post-2010,
+  and the fixed recent 18 months.
+- Outputs: `strategy_returns_by_month.csv`, `performance_by_window.csv`,
+  `cumulative_net_returns.png`, `blend_drawdown.png`.
+
+Common window (formation Jan 1995–Dec 2025, 372 months), mean-variance:
+
+| Strategy | Gross ann. return | Vol | Gross Sharpe | Monthly turnover | Net Sharpe 10 / 20 / 30 bp | Max DD (20 bp) |
+|---|---:|---:|---:|---:|---|---:|
+| MOM | 3.9% | 6.6% | 0.59 | 51% | 0.49 / 0.40 / 0.31 | -20% |
+| REV | 0.2% | 5.0% | 0.04 | 174% | -0.38 / -0.80 / -1.21 | -72% |
+| REV orthogonal | -0.3% | 4.4% | -0.08 | 182% | -0.57 / -1.07 / -1.56 | -78% |
+| Blend | 3.2% | 6.6% | 0.48 | 58% | 0.38 / 0.27 / 0.17 | -23% |
+
+- REV has no gross edge, and its industry ranks change a lot month to month
+  (rank autocorrelation 0.42 vs. 0.90 for MOM), so it trades ~175% of
+  capital a month and loses heavily after costs. The blend is mostly MOM and
+  does slightly worse than MOM alone.
+- Post-2010 net Sharpe (20 bp): MOM 0.44, blend 0.32, REV -0.68, REV
+  orthogonal -0.93. Recent 18 months: 17 return months for MOM, 10 for the
+  REV-based strategies; descriptive only.
+- No net Sharpe exceeds 1.5 (CLAUDE.md 13 look-ahead check).
+- Phase 7 (6-factor alpha with Newey-West t-stats) decides the rejection
+  criterion; these Sharpe ratios are not yet factor-adjusted.

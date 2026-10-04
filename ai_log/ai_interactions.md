@@ -142,3 +142,32 @@ should get its own entry, with the prompt the team sent it.
 
 **Critical evaluation (to be written by the team):**
 
+
+---
+
+## Entry 4: Covariance shrinkage and Phase 6 backtest
+
+- **Date:** 2026-10-04
+- **Phase:** 5–6 (risk model change, backtest, costs)
+- **Tool:** Claude Code
+
+**Prompt (verbatim):**
+
+> how are the risks looking so far; ok go with covariance shrinkage and go
+> with phase 6;
+
+**Summary of what was produced:**
+
+Claude Code added 50% shrinkage of the EWMA covariance toward its diagonal
+(the team's decision, recorded in CLAUDE.md 7.1), which brought realized
+active volatility of the mean-variance books from about 10% to 4.3–6.6%
+against the 5% target and cut gross exposure from about 4x to 1.2–1.5x. It
+wrote `src/backtest.py` (t+1 returns, drift-adjusted turnover, costs charged
+on the following month, performance by window, cumulative-return and
+drawdown figures) with tests that hand-check turnover and timing. Over
+1995–2025, MOM nets a 0.40 Sharpe at 20 bp and the blend 0.27, while REV and
+REV orthogonal have no gross edge and lose heavily after costs because their
+industry rankings turn over about 175% a month.
+
+**Critical evaluation (to be written by the team):**
+
