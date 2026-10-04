@@ -31,7 +31,7 @@ prompts for your password and offers to create `~/.pgpass`. Optionally set
 | 5. Risk model and holdings | `python -m src.portfolio` | `data/processed/holdings.parquet`, `portfolio_by_month.csv`, `portfolio_risk_summary.csv`, λ figure |
 | 6. Backtest and costs | `python -m src.backtest` | `strategy_returns_by_month.csv`, `performance_by_window.csv`, cumulative-return and drawdown figures |
 | 7. Factor attribution | `python -m src.attribution` | `factor_regressions.csv`, `alpha_with_without_umd.csv` (needs `kf_ff5`, `kf_umd`, `kf_strev` in `data/raw`) |
-| 8. Robustness | not yet implemented | |
+| 8. Robustness | `python -m src.robustness` (then `--alphas-only` where `data/raw` exists) | `robustness_grid.csv`, heatmap, annual returns, 2009/2020 table, rolling alpha |
 
 Tests: `python -m pytest -q tests`
 
@@ -268,3 +268,43 @@ of 20 bp, Newey-West t-stats):**
   left does not survive trading costs. Per the pre-registered criterion the
   conclusion is **do not implement** (pending the Phase 8 robustness checks,
   which cannot change the primary verdict but test its sensitivity).
+
+### Phase 8: robustness (run 2026-10-04; partial — see "still to run")
+
+- `src/robustness.py` changes one dimension of the base case at a time and
+  reruns the blended strategy end to end (signals -> IC/blend -> holdings ->
+  backtest). The momentum lookback x covariance half-life heatmap is a full
+  3x3. Every row is scored on the same formation months (Jan 1995–Dec 2025).
+  The base row reproduces the Phase 6 blend to within 1e-10.
+- Beta-neutral books use betas to the equal-weighted industry average (the
+  signal panel has no industry market caps for a value-weighted proxy).
+
+Blended strategy, mean-variance, formation Jan 1995–Dec 2025:
+
+| Change from base | Gross Sharpe | Net Sharpe (20 bp) | Net Sharpe post-2010 | Monthly turnover |
+|---|---:|---:|---:|---:|
+| Base (12-month MOM, net-revision REV, 30-month half-life, 5% risk, dollar neutral) | 0.49 | 0.27 | 0.32 | 58% |
+| Costs 10 bp / 30 bp | 0.49 | 0.38 / 0.17 | 0.45 / 0.20 | 58% |
+| Momentum lookback 6 | 0.15 | -0.40 | -0.16 | 130% |
+| Momentum lookback 9 | 0.33 | 0.04 | 0.11 | 75% |
+| REV = consensus change | 0.39 | 0.15 | 0.20 | 62% |
+| Covariance half-life 18 / 60 | 0.50 / 0.45 | 0.28 / 0.26 | 0.34 / 0.31 | 59% / 57% |
+| Risk target 3% / 8% | 0.49 | 0.27 / 0.27 | 0.32 | 35% / 93% |
+| Dollar + beta neutral | 0.56 | 0.33 | 0.34 | 60% |
+
+- No setting comes close to the 1.5 net Sharpe look-ahead warning level.
+  The best net Sharpe is 0.38 (10 bp costs).
+- The result is driven by the momentum leg: shorter lookbacks (6, 9) trade
+  more and lose the edge; the covariance half-life barely matters (heatmap:
+  `robustness_heatmap_sharpe.png`). The risk target only scales the book, so
+  Sharpe is unchanged and turnover scales with it.
+- Swapping in the consensus-change REV makes the blend worse, not better.
+- Stress years: 2009 (momentum crash) blend -13.3%, MOM -11.8%, REV -18.3%;
+  April 2009 alone was -12% for MOM and the blend. 2020: blend +12.3%, MOM
+  +14.3%, REV +2.0%. REV did not hedge the momentum crash.
+- **Still to run where `data/raw` and `data/interim` exist:** minimum
+  analysts 1 / 5 and the 30-industry set (`python -m src.robustness`), then
+  `python -m src.robustness --alphas-only` for 6-factor alpha t-stats per
+  row and the rolling 36-month alpha. These should be run on the machine
+  whose raw data built the committed panel.
+- The optional macro extension (CLAUDE.md 10.4) has not been run.

@@ -207,3 +207,33 @@ reporting the regression, as CLAUDE.md 9 asks.
 
 **Critical evaluation (to be written by the team):**
 
+
+---
+
+## Entry 6: Phase 8 robustness grid and subperiod stability
+
+- **Date:** 2026-10-04
+- **Phase:** 8 (robustness)
+- **Tool:** Claude Code
+
+**Prompt (verbatim):**
+
+> ok
+
+(in reply to: "Should I start [Phase 8]?")
+
+**Summary of what was produced:**
+
+Claude Code wrote `src/robustness.py`, a one-at-a-time grid around the base
+case plus a full 3x3 momentum-lookback x half-life heatmap, where each row
+reruns signals, the IC blend, holdings, and the backtest for the blended
+strategy and is scored on a fixed 1995–2025 window. It added a beta-neutral
+option to the optimizer, a 30-industry hook, annual returns, a 2009/2020
+stress table, and a rolling-alpha step that runs where the factor files
+exist. The base row reproduces Phase 6 to within 1e-10. No setting gives a
+net Sharpe above 0.38; the momentum lookback drives the results, and the
+consensus-change REV makes the blend worse. The minimum-analysts and
+30-industry rows and all factor alphas need the team's raw data.
+
+**Critical evaluation (to be written by the team):**
+
