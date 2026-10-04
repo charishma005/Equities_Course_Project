@@ -63,19 +63,34 @@ def grinold_kahn_alpha(z: np.ndarray, ic: float, omega: np.ndarray) -> np.ndarra
     return alpha - alpha.mean()
 
 
-def _unconstrained_dollar_neutral(alpha: np.ndarray, cov: np.ndarray) -> np.ndarray:
-    """argmax alpha'h - h' cov h  s.t. 1'h = 0  (lambda = 1)."""
-    ones = np.ones(len(alpha))
+def _constraint_matrix(n: int, extra: np.ndarray | None) -> np.ndarray:
+    """Rows of the equality constraints A h = 0: dollar neutrality, plus any
+    extra exposures (e.g. market betas) to neutralize."""
+    rows = [np.ones(n)]
+    if extra is not None:
+        rows += list(np.atleast_2d(extra))
+    return np.vstack(rows)
+
+
+def _unconstrained_dollar_neutral(alpha: np.ndarray, cov: np.ndarray,
+                                  extra: np.ndarray | None = None) -> np.ndarray:
+    """argmax alpha'h - h' cov h  s.t. A h = 0  (lambda = 1).
+
+    A always includes 1' (dollar neutral); `extra` adds rows such as betas.
+    Closed form: h = 1/2 Sigma^-1 (alpha - A' mu), A Sigma^-1 A' mu = A Sigma^-1 alpha.
+    """
+    a = _constraint_matrix(len(alpha), extra)
     inv_alpha = np.linalg.solve(cov, alpha)
-    inv_ones = np.linalg.solve(cov, ones)
-    mu = inv_alpha.sum() / inv_ones.sum()
-    return 0.5 * (inv_alpha - mu * inv_ones)
+    inv_at = np.linalg.solve(cov, a.T)
+    mu = np.linalg.lstsq(a @ inv_at, a @ inv_alpha, rcond=None)[0]
+    return 0.5 * (inv_alpha - inv_at @ mu)
 
 
 def _box_dollar_neutral(alpha: np.ndarray, cov: np.ndarray, cap: float,
-                        start: np.ndarray) -> np.ndarray:
-    """argmax alpha'h - h' cov h  s.t. 1'h = 0, |h_n| <= cap  (lambda = 1)."""
+                        start: np.ndarray, extra: np.ndarray | None = None) -> np.ndarray:
+    """argmax alpha'h - h' cov h  s.t. A h = 0, |h_n| <= cap  (lambda = 1)."""
     n = len(alpha)
+    a = _constraint_matrix(n, extra)
     x0 = np.clip(start, -cap, cap)
     x0 = x0 - x0.mean()
     x0 = np.clip(x0, -cap, cap)
@@ -83,8 +98,7 @@ def _box_dollar_neutral(alpha: np.ndarray, cov: np.ndarray, cap: float,
         lambda h: h @ cov @ h - alpha @ h, x0,
         jac=lambda h: 2 * cov @ h - alpha,
         method="SLSQP", bounds=[(-cap, cap)] * n,
-        constraints=[{"type": "eq", "fun": lambda h: h.sum(),
-                      "jac": lambda h: np.ones(n)}],
+        constraints=[{"type": "eq", "fun": lambda h: a @ h, "jac": lambda h: a}],
         options={"ftol": 1e-14, "maxiter": 500},
     )
     return result.x
@@ -92,19 +106,21 @@ def _box_dollar_neutral(alpha: np.ndarray, cov: np.ndarray, cap: float,
 
 def capped_mean_variance(alpha: np.ndarray, cov: np.ndarray,
                          cap_frac: float = config.POSITION_CAP_FRAC_GROSS,
-                         max_iter: int = 200) -> tuple[np.ndarray, bool]:
+                         max_iter: int = 200,
+                         extra: np.ndarray | None = None) -> tuple[np.ndarray, bool]:
     """Mean-variance holdings at lambda = 1 with 1'h = 0 and |h_n| <= cap * gross.
 
+    `extra` adds equality constraints extra @ h = 0 (e.g. zero market beta).
     Returns (holdings, converged). Scaling the result by 1/lambda gives the
-    solution for any lambda, since both constraints are scale-free.
+    solution for any lambda, since all constraints are scale-free.
     """
-    h = _unconstrained_dollar_neutral(alpha, cov)
+    h = _unconstrained_dollar_neutral(alpha, cov, extra)
     gross = np.abs(h).sum()
     if gross == 0 or np.abs(h).max() <= cap_frac * gross * (1 + config.CAP_TOL):
         return h, True
     cap = cap_frac * gross
     for _ in range(max_iter):
-        h = _box_dollar_neutral(alpha, cov, cap, h)
+        h = _box_dollar_neutral(alpha, cov, cap, h, extra)
         new_cap = cap_frac * np.abs(h).sum()
         if abs(new_cap - cap) <= 1e-10 * max(cap, 1e-12):
             break
@@ -146,6 +162,8 @@ def build_holdings(panel: pd.DataFrame,
                    target: float = config.TARGET_ACTIVE_RISK,
                    ic_min_months: int = config.ALPHA_IC_MIN_MONTHS,
                    shrinkage: float = config.COV_SHRINKAGE,
+                   beta_neutral: bool = False,
+                   methods: tuple[str, ...] = ("mv", "diag"),
                    ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Form monthly holdings for each strategy, mean-variance and diagonal.
 
@@ -156,6 +174,9 @@ def build_holdings(panel: pd.DataFrame,
     realized active return of month t+1 (NaN when not yet observed).
     The optimizer, risk calibration, and ex-ante risk use the EWMA covariance
     shrunk toward its diagonal by `shrinkage`; omega uses the raw EWMA.
+    With `beta_neutral`, the mean-variance book also has zero beta to the
+    equal-weighted industry average (risk.market_betas); `beta_exposure` in
+    the diagnostics reports beta'h for every book.
     """
     panel = panel.copy()
     panel["month"] = to_month_end(panel["month"])
@@ -183,9 +204,11 @@ def build_holdings(panel: pd.DataFrame,
             alpha = grinold_kahn_alpha(z_all[available], ic, omega)
             next_ret = group["next_return"].to_numpy(dtype=float)[available]
             ids = np.array(industries)[available]
-            for method in ("mv", "diag"):
+            betas = risk.market_betas(covs[month])[available]
+            for method in methods:
                 if method == "mv":
-                    unit, converged = capped_mean_variance(alpha, sub_cov)
+                    unit, converged = capped_mean_variance(
+                        alpha, sub_cov, extra=betas if beta_neutral else None)
                 else:
                     unit, converged = diagonal_holdings(alpha, omega), True
                 h, lam, exante = calibrate_to_target(unit, sub_cov, target)
@@ -196,6 +219,7 @@ def build_holdings(panel: pd.DataFrame,
                     "n_industries": int(available.sum()), "ic_used": ic,
                     "lambda": lam, "exante_active_risk_ann": exante,
                     "gross_exposure": gross, "net_exposure": h.sum(),
+                    "beta_exposure": float(betas @ h),
                     "max_weight_frac_gross": np.abs(h).max() / gross,
                     "n_at_cap": int(np.sum(np.abs(h) >= config.POSITION_CAP_FRAC_GROSS
                                            * gross * (1 - 1e-6))),

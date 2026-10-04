@@ -210,3 +210,25 @@ def test_build_holdings_uses_shrunk_covariance_for_risk():
     mv_raw = raw.loc[raw["method"].eq("mv"), "lambda"].to_numpy()
     mv_shr = shrunk.loc[shrunk["method"].eq("mv"), "lambda"].to_numpy()
     assert not np.allclose(mv_raw, mv_shr)
+
+
+def test_beta_neutral_holdings_have_zero_beta_and_dollar_exposure():
+    cov, alpha = _cov_alpha(n=20, seed=11)
+    betas = risk.market_betas(cov)
+    assert np.full(20, 1 / 20) @ betas == pytest.approx(1.0)   # market has beta 1
+    h = portfolio._unconstrained_dollar_neutral(alpha, cov, extra=betas)
+    assert h.sum() == pytest.approx(0, abs=1e-12) and betas @ h == pytest.approx(0, abs=1e-12)
+    alpha_big = alpha.copy()
+    alpha_big[0] += 0.2
+    hc, ok = portfolio.capped_mean_variance(alpha_big, cov, extra=betas)
+    assert ok and abs(betas @ hc) < 1e-8 and abs(hc.sum()) < 1e-8
+    assert np.abs(hc).max() <= 0.10 * np.abs(hc).sum() * (1 + 1e-4)
+
+
+def test_build_holdings_beta_neutral_option():
+    panel, _ = _panel()
+    _, diag = portfolio.build_holdings(panel, {"mom": "mom_z"}, ic_min_months=3,
+                                       beta_neutral=True, methods=("mv",))
+    assert set(diag["method"]) == {"mv"}
+    assert diag["beta_exposure"].abs().max() < 1e-8
+    assert diag["exante_active_risk_ann"].to_numpy() == pytest.approx(0.05, rel=1e-6)

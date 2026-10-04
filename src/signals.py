@@ -144,22 +144,27 @@ def build_signals(ibes: pd.DataFrame, industry_returns: pd.DataFrame,
                   sic_ranges: pd.DataFrame, lookback: int = config.MOM_LOOKBACK,
                   skip: int = config.MOM_SKIP,
                   min_analysts: int = config.MIN_ANALYSTS,
-                  min_firms: int = config.MIN_FIRMS_PER_INDUSTRY) -> pd.DataFrame:
+                  min_firms: int = config.MIN_FIRMS_PER_INDUSTRY,
+                  other_industry: int = config.OTHER_INDUSTRY_49) -> pd.DataFrame:
     """Build the full industry signal panel with one-month-ahead returns.
 
     Output: one row per (month, industry) with raw and z-scored signals formed
     at month-end t and `next_return`, the industry return in month t+1.
     Signals without data stay missing; no months are dropped.
+    `other_industry` is the ID of "Other" (49 for the 49-industry set, 30 for
+    the 30-industry robustness set).
     """
-    returns_long = industry_returns_long(industry_returns, sic_ranges)
+    returns_long = industry_returns_long(industry_returns, sic_ranges, other_industry)
     momentum = momentum_signal(industry_returns, lookback, skip)
     revisions = industry_revisions(ibes, min_analysts, min_firms)
 
     names = (sic_ranges[["industry", "short"]].drop_duplicates()
              .assign(short=lambda frame: frame["short"].astype(str).str.strip()))
     by_name = dict(zip(names["short"], names["industry"].astype(int)))
-    by_name["Other"] = config.OTHER_INDUSTRY_49
-    momentum["industry"] = momentum["industry"].astype(str).str.strip().map(by_name)
+    by_name["Other"] = other_industry
+    momentum["industry"] = (momentum["industry"].astype(str).str.strip()
+                            .map(by_name).astype("Int64"))
+    revisions["industry"] = pd.to_numeric(revisions["industry"]).astype("Int64")
     panel = momentum.merge(revisions, on=["month", "industry"], how="left")
     panel = panel.sort_values(["month", "industry"])
     for signal in ("mom", "rev", "rev_alt"):

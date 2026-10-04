@@ -53,6 +53,7 @@ EXCHCD_KEEP = (1, 2, 3)
 CRSP_GAP_MAX_CARRY_MONTHS = 12     # max forward-fill of cap/SIC past CRSP end
 OTHER_INDUSTRY_49 = 49
 MIN_FIRMS_PER_INDUSTRY = 5
+OTHER_INDUSTRY_30 = 30             # "Other" in the 30-industry robustness set
 
 # --------------------------------------------------------------------------
 # Phase 3: signals
@@ -125,5 +126,14 @@ GRID = {
     "industry_set": (49, 30),
     "neutrality": ("dollar", "dollar_beta"),
 }
+# Base case of the one-at-a-time robustness grid (each row changes one value).
+GRID_BASE = {
+    "mom_lookback": 12, "rev_measure": "net_ratio", "min_analysts": 3,
+    "cov_halflife": 30, "target_active_risk": 0.05, "cost_bps": 20,
+    "industry_set": 49, "neutrality": "dollar",
+}
+# Every grid row is scored on the same formation months: the base case's
+# common window (all four Phase 6 strategies trade), Jan 1995 - Dec 2025.
+ROBUSTNESS_WINDOW = ("1995-01-31", "2025-12-31")
 
 FIG_DPI = 200

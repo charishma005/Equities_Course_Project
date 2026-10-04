@@ -90,6 +90,18 @@ def shrink_covariance(cov: np.ndarray,
     return (1 - intensity) * cov + intensity * np.diag(np.diag(cov))
 
 
+def market_betas(cov: np.ndarray) -> np.ndarray:
+    """Beta of each industry to the equal-weighted industry average.
+
+    beta_n = cov(r_n, r_m) / var(r_m) with r_m = mean_n r_n, from the given
+    covariance. The equal-weighted average is the market proxy because the
+    signal panel carries no industry market caps (CLAUDE.md 7.3 robustness).
+    """
+    n = cov.shape[0]
+    w = np.full(n, 1.0 / n)
+    return cov @ w / (w @ cov @ w)
+
+
 def residual_volatility(cov: np.ndarray, annualize: bool = True) -> np.ndarray:
     """Volatility of each industry's return minus the equal-weighted average.
 
