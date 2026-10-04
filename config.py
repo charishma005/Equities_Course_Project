@@ -108,6 +108,9 @@ STRATEGY_SIGNALS = {               # strategy -> z-score column (Phase 4 panel)
 COSTS_BPS = (10, 20, 30)
 BASE_COST_BPS = 20
 NW_LAGS = 6
+# Fewer months than this: regressions are still reported (CLAUDE.md 9), but the
+# rejection-criterion flag reads "low power" instead of yes/no.
+CRITERION_MIN_MONTHS = 36
 POST_SPLIT = "2010-01-31"
 RECENT_MONTHS = 18
 ROLLING_ALPHA_MONTHS = 36

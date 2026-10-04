@@ -64,7 +64,9 @@ def test_dropping_umd_moves_momentum_return_into_alpha():
     assert full.loc["ff5", "alpha_ann"] > full.loc["ff5_umd", "alpha_ann"] + 0.01
     comp = attribution.umd_comparison(res)
     assert {"alpha_t_ff5_umd", "alpha_t_ff5", "passes_criterion"} <= set(comp.columns)
-    assert set(comp["passes_criterion"]) <= {"yes", "no", "n/a"}
+    assert set(comp["passes_criterion"]) <= {"yes", "no", "n/a", "low power"}
+    recent = comp.loc[comp["window"].eq("recent_18m"), "passes_criterion"]
+    assert (recent == "low power").all()
 
 
 def test_alignment_is_same_calendar_month_and_missing_months_raise():

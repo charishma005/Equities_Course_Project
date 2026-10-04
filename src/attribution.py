@@ -144,9 +144,10 @@ def factor_regressions(results: pd.DataFrame, factors: pd.DataFrame,
 def umd_comparison(regressions: pd.DataFrame, method: str = "mv") -> pd.DataFrame:
     """Key table: alpha with vs. without UMD, plus the rejection-criterion check.
 
-    `passes_criterion` is True only when the 6-factor (FF5 + UMD) net alpha
-    is positive with Newey-West |t| >= 2 (CLAUDE.md 0). Windows with too few
-    months show NaN.
+    `passes_criterion` is "yes" only when the 6-factor (FF5 + UMD) net alpha
+    is positive with Newey-West t >= 2 (CLAUDE.md 0). Windows with fewer than
+    config.CRITERION_MIN_MONTHS months read "low power" (e.g. the recent 18
+    months: 10-17 observations for 7 parameters and 6 Newey-West lags).
     """
     reg = regressions.loc[regressions["method"].eq(method)]
     keys = ["strategy", "window"]
@@ -157,8 +158,9 @@ def umd_comparison(regressions: pd.DataFrame, method: str = "mv") -> pd.DataFram
     out = out.rename(columns={"n": "months", "beta_UMD": "beta_UMD_ff5_umd",
                               "t_UMD": "t_UMD_ff5_umd"})
     passes = (out["alpha_t_ff5_umd"] >= 2) & (out["alpha_ann_ff5_umd"] > 0)
-    out["passes_criterion"] = np.where(out["alpha_t_ff5_umd"].isna(), "n/a",
-                                       np.where(passes, "yes", "no"))
+    out["passes_criterion"] = np.select(
+        [out["months"] < config.CRITERION_MIN_MONTHS, out["alpha_t_ff5_umd"].isna(), passes],
+        ["low power", "n/a", "yes"], default="no")
     return out
 
 
@@ -183,7 +185,8 @@ def main() -> None:
     primary = comparison.loc[comparison["window"].isin(["common", "post_2010"])]
     print("\nRejection criterion (6-factor net alpha t >= 2, mean-variance books):")
     for _, r in primary.iterrows():
-        verdict = {"yes": "passes", "no": "fails"}.get(r["passes_criterion"], "n/a")
+        verdict = {"yes": "passes", "no": "fails"}.get(r["passes_criterion"],
+                                                       r["passes_criterion"])
         print(f"  {r['strategy']:9s} {r['window']:10s} alpha {r['alpha_ann_ff5_umd']:+.2%}/yr "
               f"t {r['alpha_t_ff5_umd']:+.2f} -> {verdict}")
 

@@ -197,5 +197,13 @@ missing, to guard against off-by-one errors. The Ken French factor files are
 not in the repository, so the code was tested on synthetic factors and must
 be run by the team to produce real results.
 
+**Problem found after the team ran it (2026-10-04):** the AI's
+`passes_criterion` flag marked the blend's recent-18-month window as "yes"
+(alpha t = 3.4). That window has only 10 monthly observations for 7
+regression parameters with 6 Newey-West lags, so the t-stat is meaningless.
+The AI had not guarded against tiny samples. Fixed by labeling windows with
+fewer than 36 months "low power" (`CRITERION_MIN_MONTHS`) while still
+reporting the regression, as CLAUDE.md 9 asks.
+
 **Critical evaluation (to be written by the team):**
 

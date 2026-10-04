@@ -225,7 +225,7 @@ Common window (formation Jan 1995–Dec 2025, 372 months), mean-variance:
 - Phase 7 (6-factor alpha with Newey-West t-stats) decides the rejection
   criterion; these Sharpe ratios are not yet factor-adjusted.
 
-### Phase 7: factor attribution (code ready 2026-10-04; run on a machine with `data/raw`)
+### Phase 7: factor attribution (2026-10-04)
 
 - `src/attribution.py` regresses monthly net returns (20 bp) on FF5 + UMD
   (primary), FF5 alone (with/without-UMD comparison), and FF5 + UMD + ST
@@ -235,5 +235,36 @@ Common window (formation Jan 1995–Dec 2025, 372 months), mean-variance:
   stops if any return month is missing from the factor data.
 - `alpha_with_without_umd.csv` has `passes_criterion` = yes only when the
   6-factor net alpha is positive with t >= 2 (CLAUDE.md 0).
-- Tested on synthetic factors only. Results: TBD after
-  `python3 -m src.attribution`.
+- Windows with fewer than 36 months (the recent 18 months: 10–17
+  observations) are labeled "low power" instead of pass/fail.
+
+**Results (run 2026-10-04 on a teammate's machine; mean-variance books, net
+of 20 bp, Newey-West t-stats):**
+
+| Strategy | Window | Months | α FF5+UMD (ann.) | t | UMD β (t) | α FF5 only | t |
+|---|---|---:|---:|---:|---|---:|---:|
+| MOM | common | 372 | +1.2% | 1.55 | 0.29 (16.9) | +3.3% | 2.84 |
+| MOM | post-2010 | 199 | +0.7% | 0.64 | 0.28 (11.1) | +2.2% | 1.68 |
+| REV | common | 372 | -4.5% | -5.83 | 0.13 (7.6) | -3.5% | -4.49 |
+| REV | post-2010 | 192 | -3.5% | -3.02 | 0.09 (3.2) | -3.0% | -2.72 |
+| REV orthogonal | common | 372 | -4.6% | -5.50 | 0.07 (4.3) | -4.2% | -5.11 |
+| REV orthogonal | post-2010 | 192 | -3.7% | -2.94 | 0.06 (2.7) | -3.3% | -2.80 |
+| Blend | common | 372 | +0.2% | 0.36 | 0.30 (20.4) | +2.4% | 2.21 |
+| Blend | post-2010 | 192 | -0.0% | -0.02 | 0.29 (13.8) | +1.6% | 1.28 |
+
+- **Rejection criterion (CLAUDE.md 0): every strategy fails** in the
+  common and post-2010 windows. No 6-factor net alpha has t >= 2.
+- REV and REV orthogonal have significantly **negative** net alpha
+  (about -4.5%/yr, t about -5.5 to -5.8): no gross edge plus ~175% monthly
+  turnover.
+- The blend's alpha is momentum: +2.4%/yr (t 2.21) against FF5 alone falls
+  to +0.2% (t 0.36) once UMD is added, with a UMD loading of 0.30 (t 20).
+  MOM behaves the same way.
+- Recent 18 months: 10–17 months for up to 8 parameters; reported in
+  `alpha_with_without_umd.csv` as "low power" and not used for the verdict.
+- **Answer to the core research question:** the revision signal adds no
+  alpha beyond momentum. Its small raw predictive power is largely shared
+  with momentum (positive UMD loadings, near-zero orthogonal IC), and what is
+  left does not survive trading costs. Per the pre-registered criterion the
+  conclusion is **do not implement** (pending the Phase 8 robustness checks,
+  which cannot change the primary verdict but test its sensitivity).
