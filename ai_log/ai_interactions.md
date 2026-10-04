@@ -171,3 +171,31 @@ industry rankings turn over about 175% a month.
 
 **Critical evaluation (to be written by the team):**
 
+
+---
+
+## Entry 5: Phase 7 factor attribution code
+
+- **Date:** 2026-10-04
+- **Phase:** 7 (factor attribution)
+- **Tool:** Claude Code
+
+**Prompt (verbatim):**
+
+> ok
+
+(in reply to: "Should I go ahead [with Phase 7]?")
+
+**Summary of what was produced:**
+
+Claude Code wrote `src/attribution.py`, which regresses each strategy's
+20 bp net returns on FF5 + UMD, FF5 alone, and FF5 + UMD + short-term
+reversal with Newey-West t-stats, across the four windows, and builds the
+with/without-UMD comparison table with a rejection-criterion flag. Returns
+are matched to factors by calendar month, and the run stops if any month is
+missing, to guard against off-by-one errors. The Ken French factor files are
+not in the repository, so the code was tested on synthetic factors and must
+be run by the team to produce real results.
+
+**Critical evaluation (to be written by the team):**
+

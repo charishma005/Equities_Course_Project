@@ -30,7 +30,8 @@ prompts for your password and offers to create `~/.pgpass`. Optionally set
 | 4. IC and blend | `python -m src.ic` | IC/horizon tables, orthogonal REV, expanding blend, figures |
 | 5. Risk model and holdings | `python -m src.portfolio` | `data/processed/holdings.parquet`, `portfolio_by_month.csv`, `portfolio_risk_summary.csv`, λ figure |
 | 6. Backtest and costs | `python -m src.backtest` | `strategy_returns_by_month.csv`, `performance_by_window.csv`, cumulative-return and drawdown figures |
-| 7–8. Attribution, robustness | not yet implemented | |
+| 7. Factor attribution | `python -m src.attribution` | `factor_regressions.csv`, `alpha_with_without_umd.csv` (needs `kf_ff5`, `kf_umd`, `kf_strev` in `data/raw`) |
+| 8. Robustness | not yet implemented | |
 
 Tests: `python -m pytest -q tests`
 
@@ -223,3 +224,16 @@ Common window (formation Jan 1995–Dec 2025, 372 months), mean-variance:
 - No net Sharpe exceeds 1.5 (CLAUDE.md 13 look-ahead check).
 - Phase 7 (6-factor alpha with Newey-West t-stats) decides the rejection
   criterion; these Sharpe ratios are not yet factor-adjusted.
+
+### Phase 7: factor attribution (code ready 2026-10-04; run on a machine with `data/raw`)
+
+- `src/attribution.py` regresses monthly net returns (20 bp) on FF5 + UMD
+  (primary), FF5 alone (with/without-UMD comparison), and FF5 + UMD + ST
+  reversal, with Newey-West (6-lag) t-stats, for every strategy, method, and
+  window (full, common, post-2010, recent 18 months).
+- Each return month t+1 is matched to factor returns of month t+1; the run
+  stops if any return month is missing from the factor data.
+- `alpha_with_without_umd.csv` has `passes_criterion` = yes only when the
+  6-factor net alpha is positive with t >= 2 (CLAUDE.md 0).
+- Tested on synthetic factors only. Results: TBD after
+  `python3 -m src.attribution`.
